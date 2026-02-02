@@ -1,0 +1,1746 @@
+<!doctype html>
+<!--
+  River Music
+  Copyright (c) 2026 jwbono
+  Licensed under the MIT License
+  https://github.com/jwbono/rivermusic
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://overpass-api.de https://overpass.kumi.systems; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>River Sonification (Curvature + Moving FFT)</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+    body { margin: 0; padding: 16px; background: #0b0f14; color: #e8eef6; }
+    h1 { margin: 0 0 10px; font-size: 18px; font-weight: 650; }
+    .row { display: grid; grid-template-columns: 320px 1fr; gap: 12px; align-items: start; }
+    .card { background: #101824; border: 1px solid #1b2a3d; border-radius: 12px; padding: 12px; }
+    label { display: block; font-size: 12px; opacity: 0.9; margin-top: 10px; }
+    input[type="range"], select { width: 100%; margin-top: 6px; }
+
+    /* Mobile Responsive Logic */
+    @media (max-width: 800px) {
+      /* Reset grid for pages */
+      .grid2 { grid-template-columns: 1fr; }
+      canvas { max-height: 250px; }
+    }
+    
+    /* Tab Navigation */
+    .nav-tabs { display: flex; gap: 8px; margin-bottom: 15px; border-bottom: 1px solid #2b3d55; padding-bottom: 8px; }
+    .nav-btn { background: transparent; border: none; color: #8b9bb4; font-weight: 600; font-size: 14px; border-radius: 6px; flex:1; }
+    .nav-btn.active { background: #1b2a3d; color: #fff; border: 1px solid #2b3d55; }
+    .nav-btn:hover { background: #132033; }
+    
+    .view-panel { display: none; }
+    .view-panel.active-view { display: block; }
+    
+    /* Hide tooltips on mobile/tab layout to reduce clutter, moved to info page */
+    .info-icon { display: none; } 
+
+    button {
+      padding: 10px 12px; border-radius: 10px; border: 1px solid #2b3d55;
+      background: #132033; color: #e8eef6; cursor: pointer;
+    }
+    button:hover { background: #16263c; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; }
+    canvas { width: 100%; height: 320px; background: #0c121b; border-radius: 12px; border: 1px solid #1b2a3d; }
+    .small { font-size: 12px; opacity: 0.85; line-height: 1.35; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .val { float: right; opacity: 0.9; font-variant-numeric: tabular-nums; }
+    
+    /* Tooltip styles */
+    .info-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #2b3d55;
+      color: #a0b4cc;
+      font-size: 10px;
+      font-weight: bold;
+      cursor: help;
+      margin-left: 5px;
+      position: relative;
+      vertical-align: middle;
+      font-style: normal;
+    }
+    .info-icon:hover {
+      background: #3a5070;
+      color: #e8eef6;
+    }
+    .info-icon .tooltip {
+      visibility: hidden;
+      opacity: 0;
+      position: absolute;
+      bottom: 125%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1e2d42;
+      color: #e8eef6;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: normal;
+      white-space: normal;
+      width: 220px;
+      text-align: left;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      border: 1px solid #3a5070;
+      z-index: 100;
+      transition: opacity 0.2s, visibility 0.2s;
+      line-height: 1.4;
+    }
+    .info-icon .tooltip::after {
+      content: "";
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border-width: 6px;
+      border-style: solid;
+      border-color: #1e2d42 transparent transparent transparent;
+    }
+    .info-icon:hover .tooltip {
+      visibility: visible;
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <h1>River Sonification</h1>
+
+  <div class="nav-tabs">
+    <button class="nav-btn active" onclick="switchView('river', this)">River</button>
+    <button class="nav-btn" onclick="switchView('sonif', this)">Sonification</button>
+    <button class="nav-btn" onclick="switchView('info', this)">Info</button>
+  </div>
+
+  <!-- VIEW 1: RIVER -->
+  <div id="view-river" class="view-panel active-view">
+    <div class="card" style="margin-bottom:12px;">
+      <label>Selected River
+        <select id="riverSelect"></select>
+      </label>
+    </div>
+
+    <div class="card">
+      <canvas id="canvas" width="900" height="600"></canvas>
+      <canvas id="spectralCanvas" width="900" height="200" style="margin-top: 10px; height: 150px; background: #0c121b; border-radius: 12px; border: 1px solid #1b2a3d;"></canvas>
+      
+      <div style="margin-top: 15px; background: #0c121b; padding: 10px; border-radius: 8px; border: 1px solid #1b2a3d;">
+        <label style="margin:0; display:flex; align-items:center; gap:10px;">
+          <span style="white-space:nowrap; width:80px;">Position <span class="val mono" id="progressVal">0.0%</span></span>
+          <input id="progressBar" type="range" min="0" max="100" step="0.1" value="0" style="width:100%; cursor:pointer;" />
+        </label>
+      </div>
+
+      <div style="display:flex; gap:10px; margin-top: 12px;">
+        <button id="playBtn">Play</button>
+        <button id="stopBtn">Stop</button>
+        <button id="recalcBtn">Recompute</button>
+      </div>
+      <div class="mono" id="status" style="margin-top:10px; color:#8b9bb4;">Ready</div>
+    </div>
+  </div>
+
+  <!-- VIEW 2: SONIFICATION -->
+  <div id="view-sonif" class="view-panel">
+    <div class="card">
+      <label>Preset (scaffold)
+          <select id="presetSelect">
+            <option value="HybridPeak" selected>HybridPeak (bass+melody+water)</option>
+            <option value="RiverMelody">RiverMelody (melody+drone)</option>
+            <option value="SpectralChoir">SpectralChoir (choral pad)</option>
+            <option value="MeanderDrums" disabled>MeanderDrums (soon)</option>
+            <option value="AdditiveFlow" disabled>AdditiveFlow (soon)</option>
+          </select>
+      </label>
+
+      <label>Window length L (meters) <span class="val mono" id="LVal"></span>
+        <input id="L" type="range" min="500" max="20000" step="100" value="6000" />
+      </label>
+
+      <label>Window speed v (m/s) <span class="val mono" id="vVal"></span>
+        <input id="v" type="range" min="50" max="5000" step="10" value="1000" />
+      </label>
+
+      <div class="grid2">
+        <div>
+          <label>Scale
+            <select id="scaleSelect">
+              <option value="pent_minor" selected>Minor Pentatonic</option>
+              <option value="major">Major</option>
+              <option value="minor">Natural Minor</option>
+              <option value="chromatic">Chromatic (no quantize)</option>
+            </select>
+          </label>
+        </div>
+        <div>
+          <label>Root
+            <select id="rootSelect">
+              <option value="C">C</option><option value="C#">C#</option><option value="D" selected>D</option>
+              <option value="D#">D#</option><option value="E">E</option><option value="F">F</option>
+              <option value="F#">F#</option><option value="G">G</option><option value="G#">G#</option>
+              <option value="A">A</option><option value="A#">A#</option><option value="B">B</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div>
+          <label>Smoothing α <span class="val mono" id="alphaVal"></span>
+            <input id="alpha" type="range" min="0" max="1" step="0.01" value="0.25" />
+          </label>
+        </div>
+        <div>
+          <label>Stickiness (semitones) <span class="val mono" id="stickyVal"></span>
+            <input id="sticky" type="range" min="0" max="12" step="1" value="2" />
+          </label>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div>
+          <label>Noise mix <span class="val mono" id="noiseVal"></span>
+            <input id="noiseMix" type="range" min="0" max="1" step="0.01" value="0.35" />
+          </label>
+        </div>
+        <div>
+          <label>Reverb <span class="val mono" id="reverbVal"></span>
+            <input id="reverbMix" type="range" min="0" max="1" step="0.01" value="0.25" />
+          </label>
+        </div>
+      </div>
+
+      <!-- Module Specific Controls -->
+      <div class="grid2" id="riverMelodyControls" style="display:none;">
+        <div>
+          <label>Prominence ρ <span class="val mono" id="prominenceVal"></span>
+            <input id="prominence" type="range" min="1" max="3" step="0.05" value="1.25" />
+          </label>
+        </div>
+        <div>
+          <label>Max hold (s) <span class="val mono" id="maxHoldVal"></span>
+            <input id="maxHold" type="range" min="0.2" max="2" step="0.05" value="0.75" />
+          </label>
+        </div>
+      </div>
+
+      <div class="grid2" id="droneControls" style="display:none;">
+        <div>
+          <label>Drone mix <span class="val mono" id="droneMixVal"></span>
+            <input id="droneMix" type="range" min="0" max="1" step="0.01" value="0.3" />
+          </label>
+        </div>
+        <div>
+          <label>Drone octave
+            <select id="droneOctave">
+              <option value="-2">-2 (sub bass)</option>
+              <option value="-1" selected>-1 (bass)</option>
+              <option value="0">0 (same)</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="grid2" id="spectralChoirControls1" style="display:none;">
+        <div>
+          <label>Voices (N) <span class="val mono" id="voicesNVal"></span>
+            <input id="voicesN" type="range" min="2" max="12" step="1" value="6" />
+          </label>
+        </div>
+        <div>
+          <label>High freq tilt λ <span class="val mono" id="tiltLambdaVal"></span>
+            <input id="tiltLambda" type="range" min="0" max="0.5" step="0.01" value="0.15" />
+          </label>
+        </div>
+      </div>
+
+      <div class="grid2" id="spectralChoirControls2" style="display:none;">
+        <div>
+          <label>Freq smoothing <span class="val mono" id="freqSmoothVal"></span>
+            <input id="freqSmooth" type="range" min="0.05" max="0.5" step="0.01" value="0.15" />
+          </label>
+        </div>
+        <div>
+          <label>Persistence (frames) <span class="val mono" id="persistenceVal"></span>
+            <input id="persistence" type="range" min="1" max="10" step="1" value="3" />
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW 3: INFO -->
+  <div id="view-info" class="view-panel">
+    <div class="card" style="margin-bottom: 20px;">
+      <h3>1. Fundamental Science</h3>
+      <p class="small">
+        This app translates physical geography into sound. The core unit of data is the <b>Curvature Signal &kappa;(s)</b>: how sharply the river bends at every meter of its length.
+      </p>
+      <p class="small">
+        As the analysis window slides along the river, we perform a <b>Spatial FFT</b> (Fast Fourier Transform). This breaks the river's shape into component sine waves (Spatial Frequencies).
+      </p>
+      <ul class="small" style="padding-left:20px; line-height:1.6;">
+        <li><b>Low Frequency (Large Amplitude):</b> Big, sweeping meanders. Mapped to Bass notes.</li>
+        <li><b>Mid Frequency:</b> Tighter loops and bends. Mapped to Melody notes.</li>
+        <li><b>High Frequency:</b> Jagged edges or noise. Mapped to Water Texture.</li>
+      </ul>
+    </div>
+
+    <div class="card" style="margin-bottom: 20px;">
+      <h3>2. Presets (Orchestration)</h3>
+      <p class="small">Each preset listens to the river differently:</p>
+      <hr style="border:0; border-top:1px solid #2b3d55; margin: 10px 0;">
+      
+      <h4>HybridPeak</h4>
+      <p class="small"><b>Vibe:</b> Structured, musical, rhythmic.</p>
+      <p class="small">Takes the single strongest peak in the Bass range and the strongest peak in the Melody range. The louder the curve, the louder the note. High-frequency "jitter" generates white noise (water sound).</p>
+      
+      <h4>RiverMelody</h4>
+      <p class="small"><b>Vibe:</b> Meditative, solo instrument.</p>
+      <p class="small">Tracks only the single most dominant feature of the river, regardless of size. Plays it as a solo flute/sine tone, grounded by a constant Drone note for reference.</p>
+      
+      <h4>SpectralChoir</h4>
+      <p class="small"><b>Vibe:</b> Ambient, lush, washing textures.</p>
+      <p class="small">Instead of picking just one or two notes, this maps the <i>entire spectrum</i> to a bank of up to 12 voices. If the river has complex curves, you hear complex chords.</p>
+    </div>
+
+    <div class="card">
+      <h3>3. Parameters</h3>
+      <ul class="small" style="padding-left:20px; line-height:1.6;">
+        <li><b>Window Length (L):</b> The size of the "eye" looking at the river. 
+            <br><i>Large (10km+):</i> Hears giant bends, slow music.
+            <br><i>Small (1km):</i> Hears local wiggles, fast/nervous music.</li>
+        <li><b>Speed (v):</b> How fast we travel down the river (playback speed).</li>
+        <li><b>Scale/Root:</b> Musical constraints. All raw frequencies are "snapped" to these notes to sound musical.</li>
+        <li><b>Smoothing (&alpha;):</b> Time lag. High smoothing makes notes slide (portamento); low smoothing makes them jump instantly.</li>
+        <li><b>Stickiness:</b> Hysteresis. Prevents the melody from flickering rapidly between two notes. Forces the river to change significantly before the note changes.</li>
+        
+        <li style="margin-top:10px; list-style:none;"><b><i>RiverMelody/Hybrid Specific:</i></b></li>
+        <li><b>Prominence (&rho;):</b> How "confident" a bend must be to trigger a note. High prominence = silence unless there is a very clear curve.</li>
+        <li><b>Max Hold:</b> Maximum duration a single note can sustain on its own. Keeps the melody moving even if the river is straight.</li>
+        <li><b>Drone Mix/Octave:</b> Controls the constant background "pedal point" tone that grounds the melody.</li>
+        
+        <li style="margin-top:10px; list-style:none;"><b><i>SpectralChoir Specific:</i></b></li>
+        <li><b>Voices (N):</b> Number of simultaneous singers. More voices = richer, more complex chords.</li>
+        <li><b>High Freq Tilt:</b> EQ balance. High tilt = dark, warm choir (focus on bass). Low tilt = bright, shimmering choir.</li>
+        <li><b>Persistence:</b> Stability. High persistence means voices linger like ghosts. Low persistence means they react instantly to the river.</li>
+      </ul>
+
+      <div style="margin-top:20px; text-align:center; display:flex; flex-direction:column; gap:10px;">
+        <button onclick="analyzeRiverHealth()" style="font-size:11px; padding:8px 10px; opacity:0.8;">Run DB Health Check (Console)</button>
+        <button onclick="riverDatabase.clear().then(()=>{alert('Database Cleared! Reloading...'); location.reload();})" style="font-size:11px; padding:8px 10px; opacity:0.8; background:#3d2b2b; border-color:#553a3a;">Clear Local Database</button>
+      </div>
+    </div>
+  </div>
+
+
+<script>
+function switchView(id, btn) {
+    // Hide all views
+    document.querySelectorAll('.view-panel').forEach(el => el.classList.remove('active-view'));
+    // Show selected
+    document.getElementById('view-'+id).classList.add('active-view');
+    
+    // Update buttons
+    if(btn) {
+        document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+        btn.classList.add('active');
+    }
+}
+
+/** ---------------------------------------------------------
+ *  0) River catalog - Real rivers fetched from OpenStreetMap
+ *  --------------------------------------------------------- */
+const RIVER_CATALOG = [
+  // Synthetic
+  { id: "synthetic_meander_1", name: "🔧 Synthetic Meander #1", type: "synthetic", region: "Synthetic" },
+  { id: "synthetic_meander_2", name: "🔧 Synthetic Meander #2", type: "synthetic", region: "Synthetic" },
+  
+  // North America
+  { id: "osm_mississippi", name: "Mississippi River (USA)", osmId: 1756854, type: "osm", region: "North America" },
+  { id: "osm_missouri", name: "Missouri River (USA)", osmId: 89994, type: "osm", region: "North America" },
+  { id: "osm_colorado", name: "Colorado River (USA)", osmId: 282153, type: "osm", region: "North America" },
+  { id: "osm_columbia", name: "Columbia River (USA/Canada)", osmId: 172876, type: "osm", region: "North America" },
+  { id: "osm_snake", name: "Snake River (USA)", osmId: 224824, type: "osm", region: "North America" },
+  { id: "osm_ohio", name: "Ohio River (USA)", osmId: 224149, type: "osm", region: "North America" },
+  
+  // South America
+  { id: "osm_amazon", name: "Amazon River (Brazil)", osmId: 2295651, type: "osm", region: "South America" },
+  { id: "osm_parana", name: "Paraná River (South America)", osmId: 2994583, type: "osm", region: "South America" },
+  
+  // Europe
+  { id: "osm_danube", name: "Danube River (Europe)", osmId: 89652, type: "osm", region: "Europe" },
+  { id: "osm_rhine", name: "Rhine River (Europe)", osmId: 123924, type: "osm", region: "Europe" },
+  { id: "osm_elbe", name: "Elbe River (Germany/Czechia)", osmId: 123745, type: "osm", region: "Europe" },
+  { id: "osm_loire", name: "Loire River (France)", osmId: 30598, type: "osm", region: "Europe" },
+  { id: "osm_seine", name: "Seine River (France)", osmId: 4676887, type: "osm", region: "Europe" },
+  { id: "osm_rhone", name: "Rhône River (France/Switzerland)", osmId: 90980, type: "osm", region: "Europe" },
+  { id: "osm_thames", name: "Thames River (England)", osmId: 2677355, type: "osm", region: "Europe" },
+  { id: "osm_vistula", name: "Vistula River (Poland)", osmId: 1747524, type: "osm", region: "Europe" },
+  
+  // Asia
+  { id: "osm_mekong", name: "Mekong River (Southeast Asia)", osmId: 1225026, type: "osm", region: "Asia" },
+  { id: "osm_ganges", name: "Ganges River (India)", osmId: 4216225, type: "osm", region: "Asia" },
+  
+  // Africa
+  { id: "osm_nile", name: "Nile River (Africa)", osmId: 170959, type: "osm", region: "Africa" },
+  { id: "osm_congo", name: "Congo River (Africa)", osmId: 2554653, type: "osm", region: "Africa" },
+  { id: "osm_niger", name: "Niger River (Africa)", osmId: 3310816, type: "osm", region: "Africa" },
+  { id: "osm_zambezi", name: "Zambezi River (Africa)", osmId: 2826551, type: "osm", region: "Africa" },
+  
+  // Australia
+  { id: "osm_murray", name: "Murray River (Australia)", osmId: 5765123, type: "osm", region: "Australia" },
+ 
+  // Coastlines
+  { id: "osm_sognefjord", name: "Sognefjord Coast (Norway)", bbox: "61.05,5.1,61.15,6.5", type: "coastline", region: "Coastlines" },
+];
+
+/** ---------------------------------------------------------
+ *  1) Utilities & Signal Processing
+ *  --------------------------------------------------------- */
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const nextPow2 = (n) => {
+  let p = 1;
+  while (p < n) p <<= 1;
+  return p;
+};
+// Fast Median using select
+const median = (arr) => {
+  if (!arr.length) return 0;
+  const a = [...arr].sort((x,y)=>x-y);
+  const mid = a.length >> 1;
+  return (a.length & 1) ? a[mid] : 0.5 * (a[mid - 1] + a[mid]);
+};
+const mad = (arr) => {
+  const m = median(arr);
+  const dev = arr.map(x => Math.abs(x - m));
+  return median(dev);
+};
+
+// FFT (Radix-2, Cooley-Tukey, In-place)
+function fftRadix2(re, im) {
+  const n = re.length;
+  // Bit-reversal
+  let j = 0;
+  const n1 = n - 1;
+  for (let i = 0; i < n1; i++) {
+    if (i < j) {
+      const tr = re[i]; re[i] = re[j]; re[j] = tr;
+      const ti = im[i]; im[i] = im[j]; im[j] = ti;
+    }
+    let m = n >> 1;
+    while (m >= 1 && j >= m) { j -= m; m >>= 1; }
+    j += m;
+  }
+  // Butterfly
+  // Pre-calculate sine/cosine tables for standard sizes could be faster, 
+  // but for N=1024/2048/4096 this is acceptable.
+  for (let len = 2; len <= n; len <<= 1) {
+    const halfLen = len >> 1;
+    const ang = -Math.PI / halfLen; // -2*PI/len
+    const wlenRe = Math.cos(ang);
+    const wlenIm = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let wRe = 1, wIm = 0;
+      for (let k = 0; k < halfLen; k++) {
+        const ipk = i + k;
+        const ipkPlusHalf = ipk + halfLen;
+        const vRe = re[ipkPlusHalf] * wRe - im[ipkPlusHalf] * wIm;
+        const vIm = re[ipkPlusHalf] * wIm + im[ipkPlusHalf] * wRe;
+        const uRe = re[ipk];
+        const uIm = im[ipk];
+        
+        re[ipk] = uRe + vRe;
+        im[ipk] = uIm + vIm;
+        re[ipkPlusHalf] = uRe - vRe;
+        im[ipkPlusHalf] = uIm - vIm;
+
+        // Rotate w
+        const nxtRe = wRe * wlenRe - wIm * wlenIm;
+        wIm = wRe * wlenIm + wIm * wlenRe;
+        wRe = nxtRe;
+      }
+    }
+  }
+}
+
+/** ---------------------------------------------------------
+ *  2) Geometry & Data Fetching
+ *  --------------------------------------------------------- */
+function generateSyntheticRiver(id) {
+  const pts = [];
+  const n = id === "synthetic_meander_1" ? 1800 : 1200;
+  const lon0 = -120.0, lat0 = 38.0;
+  
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    let x, y;
+    if (id === "synthetic_meander_1") {
+      x = t * 0.45;
+      y = 0.03 * Math.sin(4 * Math.PI * t) +
+          0.015 * Math.sin(14 * Math.PI * t + 0.8) +
+          0.007 * Math.sin(38 * Math.PI * t + 1.7);
+    } else {
+      x = t * 0.35;
+      y = 0.045 * Math.sin(2.6 * Math.PI * t) +
+          0.012 * Math.sin(10.2 * Math.PI * t + 0.2);
+    }
+    pts.push([lon0 + x, lat0 + y]);
+  }
+  return pts;
+}
+
+const riverDatabase = (function() {
+    const DB_NAME = 'RiverMusicDB';
+    const STORE_NAME = 'rivers';
+    let dbInstance = null;
+    
+    function open() {
+        if (dbInstance) return Promise.resolve(dbInstance);
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open(DB_NAME, 1);
+            req.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(STORE_NAME)) {
+                    db.createObjectStore(STORE_NAME);
+                }
+            };
+            req.onsuccess = (e) => {
+                dbInstance = e.target.result;
+                resolve(dbInstance);
+            };
+            req.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    return {
+        async get(id) {
+            const db = await open();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readonly');
+                const req = tx.objectStore(STORE_NAME).get(id);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        },
+        async put(id, data) {
+            const db = await open();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const req = tx.objectStore(STORE_NAME).put(data, id);
+                req.onsuccess = () => resolve();
+                req.onerror = () => reject(req.error);
+            });
+        },
+        async getAllKeys() {
+            const db = await open();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readonly');
+                const req = tx.objectStore(STORE_NAME).getAllKeys();
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        },
+        async delete(id) {
+            const db = await open();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const req = tx.objectStore(STORE_NAME).delete(id);
+                req.onsuccess = () => resolve();
+                req.onerror = () => reject(req.error);
+            });
+        },
+        async clear() {
+            const db = await open();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const req = tx.objectStore(STORE_NAME).clear();
+                req.onsuccess = () => resolve();
+                req.onerror = () => reject(req.error);
+            });
+        }
+    };
+})();
+
+const riverCache = {};
+
+// Helper: Remove duplicates and loop points
+function cleanRiverPoints(pts) {
+    if (!pts || pts.length < 2) return pts;
+    const clean = [pts[0]];
+    for (let i = 1; i < pts.length; i++) {
+        const p = pts[i];
+        const prev = clean[clean.length-1];
+        // If distance < 1e-9 degrees (~0.1mm), it's a duplicate
+        const d2 = (p[0]-prev[0])**2 + (p[1]-prev[1])**2;
+        if (d2 > 1e-12) {
+            clean.push(p);
+        }
+    }
+    return clean;
+}
+
+// --- RIVER HEALTH CHECK ---
+async function analyzeRiverHealth() {
+    const ids = await riverDatabase.getAllKeys();
+    console.log(`Checking ${ids.length} rivers in DB...`);
+    
+    for(const id of ids) {
+        const pts = await riverDatabase.get(id);
+        const report = { id, points: pts.length, issues: [] };
+        
+        // 1. Point Count
+        if(pts.length < 50) report.issues.push("TOO_FEW_POINTS (<50)");
+        
+        // 2. Straight Lines (Zero curvature segments)
+        let straightSegs = 0;
+        for(let i=0; i<pts.length-2; i++) {
+             // Simple colinearity check could go here, but roughly:
+             // if 3 points form a straight line, it might be simplified too much
+        }
+
+        // 3. Loops (Duplicate points)
+        const seen = new Set();
+        let dups = 0;
+        pts.forEach(p => {
+            const k = p[0].toFixed(5)+","+p[1].toFixed(5);
+            if(seen.has(k)) dups++;
+            seen.add(k);
+        });
+        if(dups > 0) report.issues.push(`LOOPS/DUPLICATES (${dups})`);
+
+        // Report
+        if(report.issues.length > 0) {
+            console.warn(`River ${id}:`, report.issues.join(", "));
+        } else {
+            console.log(`River ${id}: OK (${pts.length} pts)`);
+        }
+    }
+    console.log("Health check done.");
+}
+
+async function fetchFeatureFromOSM(item) {
+  let query = "";
+  
+  if (!item.type || item.type === "osm") {
+      query = `
+        [out:json][timeout:90];
+        relation(${item.osmId});
+        (._;>>;);
+        out body;
+      `;
+  } else if (item.type === "coastline") {
+      query = `
+        [out:json][timeout:90];
+        way["natural"="coastline"](${item.bbox});
+        (._;>;);
+        out body;
+      `;
+  } else {
+      throw new Error("Unknown fetch type: " + item.type);
+  }
+
+  const endpoints = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter"
+  ];
+  
+  let data = null, lastError = null;
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        body: "data=" + encodeURIComponent(query),
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }
+      });
+      if (res.ok) {
+        data = await res.json();
+        if (data.elements?.length) break;
+      }
+    } catch (e) { lastError = e; }
+  }
+  if (!data?.elements?.length) throw new Error(lastError?.message || "No data");
+
+  const nodes = new Map();
+  const wayLookup = new Map();
+  let relation = null;
+
+  for (const el of data.elements) {
+    if (el.type === "node") nodes.set(el.id, [el.lon, el.lat]);
+    else if (el.type === "relation" && el.id === item.osmId && (!item.type || item.type === 'osm')) relation = el;
+  }
+  for (const el of data.elements) {
+    if (el.type === "way" && el.nodes) {
+      const coords = el.nodes.map(nid => nodes.get(nid)).filter(c => c);
+      if (coords.length > 1) wayLookup.set(el.id, coords);
+    }
+  }
+
+  let targetWays = [];
+  if (relation && relation.members) {
+    let ways = [];
+    for (const m of relation.members) {
+      if (m.type === "way" && wayLookup.has(m.ref)) {
+        ways.push({ coords: wayLookup.get(m.ref), role: m.role || "" });
+      }
+    }
+    const mainWays = ways.filter(w => !w.role || w.role === "main" || w.role === "main_stream");
+    targetWays = (mainWays.length ? mainWays : ways).map(w => w.coords);
+  } else {
+    // If BBOX/Coastline, just grab all ways found
+    targetWays = Array.from(wayLookup.values());
+  }
+  
+  return connectWays(targetWays);
+}
+
+function connectWays(ways) {
+  if (!ways.length) return [];
+  if (ways.length === 1) return ways[0];
+
+  // Heuristic: Build from the longest segment
+  ways.sort((a, b) => b.length - a.length);
+  const result = [...ways[0]]; // Clone
+  const used = new Set([0]);
+  const MAX_GAP = 5000;
+
+  // Optimized loop
+  let changed = true;
+  while (changed && used.size < ways.length) {
+    changed = false;
+    let candidates = [];
+    
+    const startPt = result[0];
+    const endPt = result[result.length - 1];
+
+    for (let i = 0; i < ways.length; i++) {
+      if (used.has(i)) continue;
+      const w = ways[i];
+      const wStart = w[0];
+      const wEnd = w[w.length - 1];
+      
+      const d1 = haversine(endPt, wStart);
+      const d2 = haversine(endPt, wEnd);
+      const d3 = haversine(startPt, wEnd);
+      const d4 = haversine(startPt, wStart);
+      
+      // Store best potential connection for this segment
+      const minD = Math.min(d1, d2, d3, d4);
+      if (minD < MAX_GAP) {
+        candidates.push({ i, d: minD, d1, d2, d3, d4 });
+      }
+    }
+
+    if (candidates.length > 0) {
+      // Pick best connection globally
+      candidates.sort((a,b) => a.d - b.d);
+      const best = candidates[0];
+      const w = ways[best.i];
+      
+      if (best.d === best.d1) { // Append forward
+        for(const p of w) result.push(p);
+      } else if (best.d === best.d2) { // Append reverse
+        for(let k=w.length-1; k>=0; k--) result.push(w[k]);
+      } else if (best.d === best.d3) { // Prepend forward
+        for(let k=w.length-1; k>=0; k--) result.unshift(w[k]);
+      } else { // Prepend reverse (wStart to Start) -> Prepend w reversed? No, wStart is closest to Start. 
+               // d4 = distance(startPt, wStart). We want to attach w's start to existing start.
+               // So w ends at wStart? No. w needs to be reversed so wEnd connects to startPt?
+               // Wait. d4 is Start <-> wStart. So we need wEnd...wStart -> Start. 
+               // Actually we need `...w_reversed... result`.
+               // w: Start->End. We want End to connect to Start.
+               // So we flip w: End->Start. Now End is at beginning of array. Connects to Start? No.
+               // Standard prepend: [New, Old]. Connection point is NewEnd == OldStart.
+               // If dist(OldStart, wStart) is small, we need w reversed: [wEnd...wStart, OldStart...].
+        for(const p of w) result.unshift(p);
+      }
+      
+      used.add(best.i);
+      changed = true;
+    }
+  }
+  return result;
+}
+
+function haversine(p1, p2) {
+  const R = 6371e3;
+  const p = Math.PI / 180;
+  const cLat = Math.cos((p1[1] + p2[1]) * p / 2);
+  const dx = (p2[0] - p1[0]) * p * R * cLat;
+  const dy = (p2[1] - p1[1]) * p * R;
+  return Math.sqrt(dx*dx + dy*dy); 
+  // Simplified flat-earth approximation for small distances is faster and sufficient for connection logic
+}
+
+function simplifyPolyline(pts, tolerance) {
+  if (pts.length <= 2) return pts;
+  let maxD = 0, idx = 0;
+  const [x1, y1] = pts[0];
+  const [x2, y2] = pts[pts.length-1];
+  const dx = x2 - x1, dy = y2 - y1;
+  const sqLen = dx*dx + dy*dy;
+  
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [px, py] = pts[i];
+    let dSq;
+    if (sqLen === 0) dSq = (px-x1)**2 + (py-y1)**2;
+    else {
+      let t = ((px-x1)*dx + (py-y1)*dy) / sqLen;
+      t = Math.max(0, Math.min(1, t));
+      dSq = (px - (x1 + t*dx))**2 + (py - (y1 + t*dy))**2;
+    }
+    if (dSq > maxD) { maxD = dSq; idx = i; }
+  }
+  
+  // Tolerance is squared comparison if we change maxD to dSq, but here maxD is distance squared? 
+  // No, let's keep it consistent with inputs.
+  // Actually standard RDP uses distance. Let's use sqrt for consistency with existing code or adapt.
+  // Existing used sqrt. Let's stick to standard distance for safety.
+  if (Math.sqrt(maxD) > tolerance) {
+    const left = simplifyPolyline(pts.slice(0, idx+1), tolerance);
+    const right = simplifyPolyline(pts.slice(idx), tolerance);
+    return [...left.slice(0, -1), ...right];
+  }
+  return [pts[0], pts[pts.length-1]];
+}
+
+function curvatureSignal(res) {
+  const { x, y, ds, s } = res;
+  const n = x.length;
+  if (n < 5) throw new Error("Need more points for curvature.");
+  
+  // Compute normalized curvature
+  const u = new Float32Array(n);
+  const theta = new Float64Array(n);
+  
+  // 1. Heading
+  for (let k = 1; k < n - 1; k++) {
+    theta[k] = Math.atan2(y[k+1] - y[k-1], x[k+1] - x[k-1]);
+  }
+  
+  // 2. Unwrap
+  let prev = theta[1];
+  for (let i = 1; i < n - 1; i++) {
+    let d = theta[i] - prev;
+    if (d > Math.PI) d -= 2*Math.PI;
+    else if (d < -Math.PI) d += 2*Math.PI;
+    theta[i] = prev + d;
+    prev = theta[i];
+  }
+  
+  // 3. Kappa = dTheta/ds
+  const kappa = new Float32Array(n);
+  for (let k = 2; k < n - 2; k++) {
+    kappa[k] = (theta[k+1] - theta[k-1]) / (2*ds);
+  }
+  
+  // 4. Normalize (Robust Z-score)
+  const absK = [];
+  for(let i=0; i<n; i++) if(kappa[i]) absK.push(Math.abs(kappa[i]));
+  const scale = (mad(absK) * 1.4826) || 1e-5;
+  
+  for (let k = 0; k < n; k++) u[k] = clamp(kappa[k] / scale, -3, 3);
+  
+  return { s, u, ds, norm: { scale } };
+}
+
+function projectLonLatToMeters(poly) {
+  const R = 6371000;
+  const latRef = poly.reduce((s,p)=>s+p[1],0)/poly.length * (Math.PI/180);
+  const cosLat = Math.cos(latRef);
+  const lon0 = poly[0][0] * (Math.PI/180);
+  const lat0 = poly[0][1] * (Math.PI/180);
+  
+  // Float32 sufficient for rendering/audio relative coords? No, use 64 for meters to avoid jitter.
+  const x = new Float64Array(poly.length);
+  const y = new Float64Array(poly.length);
+  
+  for (let i=0; i<poly.length; i++) {
+    x[i] = (poly[i][0] * (Math.PI/180) - lon0) * R * cosLat;
+    y[i] = (poly[i][1] * (Math.PI/180) - lat0) * R;
+  }
+  return { x, y };
+}
+
+function resampleByArcLength(xIn, yIn, ds) {
+  const n = xIn.length;
+  // Calculate cumulative distance
+  const dists = new Float64Array(n);
+  dists[0] = 0;
+  for (let i=1; i<n; i++) {
+    dists[i] = dists[i-1] + Math.hypot(xIn[i]-xIn[i-1], yIn[i]-yIn[i-1]);
+  }
+  const total = dists[n-1];
+  const m = Math.ceil(total/ds) + 1;
+  const x = new Float64Array(m);
+  const y = new Float64Array(m);
+  const s = new Float64Array(m);
+  
+  // Interpolate
+  let j = 0;
+  for (let k=0; k<m; k++) {
+    const sk = k * ds;
+    s[k] = sk;
+    while (j < n-2 && dists[j+1] < sk) j++;
+    const lenSeg = dists[j+1] - dists[j];
+    const t = lenSeg > 1e-6 ? (sk - dists[j]) / lenSeg : 0;
+    x[k] = lerp(xIn[j], xIn[j+1], t);
+    y[k] = lerp(yIn[j], yIn[j+1], t);
+  }
+  return { s, x, y, ds, total };
+}
+
+/** ---------------------------------------------------------
+ *  3) Audio Analyzers (Shared Logic)
+ *  --------------------------------------------------------- */
+const NOTE_TO_SEMITONE = { "C":0,"C#":1,"D":2,"D#":3,"E":4,"F":5,"F#":6,"G":7,"G#":8,"A":9,"A#":10,"B":11 };
+const SCALES = {
+  chromatic: [0,1,2,3,4,5,6,7,8,9,10,11],
+  major:     [0,2,4,5,7,9,11],
+  minor:     [0,2,3,5,7,8,10],
+  pent_minor:[0,3,5,7,10]
+};
+
+function quantizeMidi(midi, rootName, scaleName) {
+  const root = NOTE_TO_SEMITONE[rootName] ?? 2;
+  const scale = SCALES[scaleName] ?? SCALES.pent_minor;
+  if (scaleName === "chromatic") return midi;
+  
+  const m0 = Math.round(midi);
+  let best = m0, minD = Infinity;
+  // Check small range
+  for (let d = -2; d <= 2; d++) {
+    const m = m0 + d;
+    const pc = (m - root + 120) % 12;
+    if (scale.includes(pc)) {
+      if (Math.abs(m - midi) < minD) { minD = Math.abs(m - midi); best = m; }
+    }
+  }
+  return best;
+}
+
+class BaseAnalyzer {
+  constructor(curvSig) {
+    this.curv = curvSig;
+    this.t = 0;
+    this.sStart = 0;
+    // Pre-allocated buffers
+    this._re = new Float64Array(4096);
+    this._im = new Float64Array(4096);
+  }
+
+  reset(L) { 
+    this.t = 0; 
+    this.sStart = L/2; 
+  }
+
+  seek(dist) {
+      this.t = 0;
+      this.sStart = dist;
+  }
+
+  // Returns { re, im, N, etc } or null if done
+  computeWindow(params) {
+    const { L, v, dt } = params;
+    const { s, u, ds } = this.curv;
+    const total = s[s.length - 1];
+    const sC = this.sStart + v * this.t;
+    const half = L / 2;
+
+    if (sC - half < 0 || sC + half > total) return null;
+
+    const i0 = Math.max(0, Math.floor((sC - half) / ds));
+    const i1 = Math.min(u.length - 1, Math.ceil((sC + half) / ds));
+    const segLen = i1 - i0 + 1;
+    const N = nextPow2(segLen);
+
+    // Resize if needed (rare)
+    if (N > this._re.length) {
+      this._re = new Float64Array(N);
+      this._im = new Float64Array(N);
+    }
+    const re = this._re;//.subarray(0, N); // subarray creates view, cheap
+    const im = this._im;//.subarray(0, N);
+
+    // Fill & Window
+    for (let i = 0; i < N; i++) {
+      if (i < segLen) {
+        // Hann
+        const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (segLen - 1 || 1));
+        re[i] = u[i0 + i] * w;
+      } else {
+        re[i] = 0;
+      }
+      im[i] = 0;
+    }
+
+    // FFT inplace
+    fftRadix2(re.subarray(0,N), im.subarray(0,N));
+    
+    // Frequencies
+    const f1 = 0.5 / L, f2 = 2 / L, f3 = 8 / L, f4 = 32 / L;
+    
+    this.t += dt; // advance time
+    
+    return { re, im, N, segLen, sC, i0, i1, f1, f2, f3, f4, ds };
+  }
+  
+  bin(f, N, ds) { return Math.round(f * N * ds); }
+  
+  logNorm(f, fmin, fmax) {
+      const v = Math.log(Math.max(f, 1e-9));
+      const mn = Math.log(Math.max(fmin, 1e-9));
+      const mx = Math.log(Math.max(fmax, 1e-9));
+      return clamp((v - mn) / (mx - mn), 0, 1);
+  }
+}
+
+class HybridPeakAnalyzer extends BaseAnalyzer {
+  constructor(c) { super(c); this.smB = 0; this.smM = 0; this.smN = 0; this.lastM = null; }
+  
+  reset(L) { super.reset(L); this.smB=0; this.smM=0; this.smN=0; this.lastM=null; }
+
+  frame(p) {
+    const data = this.computeWindow(p);
+    if (!data) return { done: true };
+    const { re, im, N, ds, f1, f2, f3, f4 } = data;
+    const { alpha, stickySemis, root, scale } = p;
+
+    // Peak Picking
+    const getPeak = (fa, fb) => {
+      let maxA = 0, bestI = this.bin(fa, N, ds);
+      const iStart = Math.max(1, this.bin(fa, N, ds));
+      const iEnd = this.bin(fb, N, ds);
+      for(let i=iStart; i<=iEnd; i++){
+        const a = re[i]*re[i] + im[i]*im[i]; // mag squared faster
+        if(a > maxA) { maxA = a; bestI = i; }
+      }
+      return { idx: bestI, amp: Math.sqrt(maxA) };
+    };
+
+    const bass = getPeak(f1, f2);
+    const mel = getPeak(f2, f3);
+    
+    // High band energy
+    let eH = 0;
+    const nStart = Math.max(1, this.bin(f3, N, ds));
+    const nEnd = Math.min(N/2, this.bin(f4, N, ds));
+    for(let i=nStart; i<=nEnd; i++) eH += re[i]*re[i] + im[i]*im[i];
+
+    // Smooth
+    const bg = Math.tanh(2 * bass.amp);
+    const mg = Math.tanh(2 * mel.amp);
+    const ng = Math.tanh(0.6 * Math.sqrt(eH));
+    
+    this.smB = lerp(this.smB, bg, alpha);
+    this.smM = lerp(this.smM, mg, alpha);
+    this.smN = lerp(this.smN, ng, alpha);
+
+    // MIDI
+    const fb = bass.idx / (N * ds);
+    const fm = mel.idx / (N * ds);
+    let midiB = 36 + this.logNorm(fb, f1, f2) * 16;
+    let midiM = 52 + this.logNorm(fm, f2, f3) * 32;
+    
+    midiB = quantizeMidi(midiB, root, scale);
+    midiM = quantizeMidi(midiM, root, scale);
+
+    if (this.lastM !== null && Math.abs(midiM - this.lastM) < stickySemis) midiM = this.lastM;
+    else this.lastM = midiM;
+
+    return {
+      done: false, preset: 'HybridPeak', t: this.t, sC: data.sC, window: { i0:data.i0, i1:data.i1 },
+      bass: { midi: midiB, gain: this.smB },
+      melody: { midi: midiM, gain: this.smM, gate: this.smM > 0.12 },
+      water: { noiseGain: this.smN }
+    };
+  }
+}
+
+class RiverMelodyAnalyzer extends BaseAnalyzer {
+  constructor(c) { super(c); this.smM=0; this.smD=0; this.lastM=null; this.lastD=null; this.lastTrig=0; this.gateOn=false; }
+  reset(L) { super.reset(L); this.smM=0; this.smD=0; this.lastM=null; this.lastD=null; this.gateOn=false; }
+
+  frame(p) {
+    const data = this.computeWindow(p);
+    if (!data) return { done: true };
+    const { re, im, N, ds, f1, f2, f3 } = data;
+    const { alpha, stickySemis, root, scale, prominence, maxHold } = p;
+
+    // Melody Band
+    const mPeaks = [];
+    const iStart = Math.max(1, this.bin(f2, N, ds));
+    const iEnd = this.bin(f3, N, ds);
+    for(let i=iStart; i<=iEnd; i++){
+      mPeaks.push({ i, a: Math.hypot(re[i], im[i]) });
+    }
+    mPeaks.sort((a,b) => b.a - a.a);
+    const bestM = mPeaks[0] || { i:iStart, a:0 };
+    const secM = mPeaks[1] || { i:iStart, a:0 };
+    const promRatio = bestM.a / (secM.a + 1e-9);
+
+    // Drone
+    let bestD = 0, maxD = 0;
+    const dStart = Math.max(1, this.bin(f1, N, ds));
+    const dEnd = this.bin(f2, N, ds);
+    for(let i=dStart; i<=dEnd; i++) {
+        const a = Math.hypot(re[i], im[i]);
+        if(a>maxD) { maxD=a; bestD=i; }
+    }
+
+    // Smooth
+    this.smM = lerp(this.smM, Math.tanh(2*bestM.a), alpha);
+    this.smD = lerp(this.smD, Math.tanh(1.5*maxD), alpha*0.3);
+
+    // MIDI
+    const fm = bestM.i / (N*ds);
+    const fd = bestD / (N*ds);
+    let mM = 52 + this.logNorm(fm, f2, f3)*32;
+    let mD = 36 + this.logNorm(fd, f1, f2)*16;
+    
+    mM = quantizeMidi(mM, root, scale);
+    mD = quantizeMidi(mD, root, scale);
+
+    if(this.lastM !== null && Math.abs(mM - this.lastM) < stickySemis) mM = this.lastM;
+    else this.lastM = mM;
+    
+    if(this.lastD !== null && Math.abs(mD - this.lastD) < 4) mD = this.lastD;
+    else this.lastD = mD;
+
+    // Logic
+    const gateCond = this.smM > 0.12 && promRatio > prominence;
+    const sinceTrig = this.t - this.lastTrig;
+    const changed = mM !== this.lastM; // Actually lastM is already updated, so check against prev frame value? 
+    // Logic simplification: just trigger if gate rising or time exceeded
+    const shouldTrig = (!this.gateOn && gateCond) || (gateCond && sinceTrig > maxHold);
+    
+    if (shouldTrig) this.lastTrig = this.t;
+    this.gateOn = gateCond;
+
+    return {
+      done: false, preset: 'RiverMelody', t: this.t, sC: data.sC, window: { i0:data.i0, i1:data.i1 },
+      melody: { midi: mM, gain: this.smM, gate: gateCond, velocity: clamp(this.smM,0,1), retrigger: shouldTrig },
+      drone: { midi: mD, gain: this.smD }
+    };
+  }
+}
+
+class SpectralChoirAnalyzer extends BaseAnalyzer {
+  constructor(c) { 
+    super(c); 
+    this.voices = Array(12).fill().map(()=>({midi:60, gain:0, pan:0, alive:false, age:0}));
+  }
+  reset(L) { super.reset(L); this.voices.forEach(v=>{v.gain=0;v.alive=false;}); }
+
+  frame(p) {
+    const data = this.computeWindow(p);
+    if (!data) return { done: true };
+    const { re, im, N, ds } = data;
+    const { L, voicesN, tiltLambda, freqSmooth, persistenceFrames, root, scale, stickySemis, alpha } = p;
+
+    const fMin = 0.3/L, fMax = 10/L;
+    const bMin = this.bin(fMin, N, ds), bMax = this.bin(fMax, N, ds);
+    
+    const peaks = [];
+    for(let i=bMin+1; i<bMax-1; i++) {
+        const a = Math.hypot(re[i],im[i]);
+        if (a > Math.hypot(re[i-1],im[i-1]) && a > Math.hypot(re[i+1],im[i+1]) && a > 0.01) {
+            const freq = i/(N*ds);
+            const tilt = 1 + tiltLambda * Math.log(1 + freq/fMin);
+            peaks.push({ i, freq, a: a*tilt, rawA: a });
+        }
+    }
+    peaks.sort((a,b)=>b.a - a.a);
+    
+    // Process top N
+    const inputs = peaks.slice(0, voicesN).map((pk, idx) => {
+        let m = 48 + this.logNorm(pk.freq, fMin, fMax)*36;
+        return { 
+            m: quantizeMidi(m, root, scale), 
+            g: Math.tanh(2*pk.rawA), 
+            p: ((idx - (voicesN-1)/2)*0.4) 
+        };
+    });
+
+    // Tracking
+    const used = new Set();
+    const smooth = freqSmooth;
+    
+    // 1. Update existing
+    inputs.forEach(inp => {
+        let best = -1, minD = Infinity;
+        // Find best match in active or latent voices
+        this.voices.forEach((v,i) => {
+            if(used.has(i)) return;
+            const d = Math.abs(v.midi - inp.m);
+            if(d < minD && d < stickySemis + 6) { minD = d; best = i; }
+        });
+        // If not found, use empty
+        if (best === -1) best = this.voices.findIndex((v,i) => !used.has(i) && !v.alive);
+        // Else steal oldest
+        if (best === -1) {
+            let maxAge = -1;
+            this.voices.forEach((v,i) => { if(!used.has(i) && v.age > maxAge) { maxAge = v.age; best = i; } });
+        }
+        if (best === -1) best = 0; // Fallback
+
+        used.add(best);
+        const v = this.voices[best];
+        v.alive = true;
+        v.age = 0;
+        v.midi = v.midi * (1-smooth) + inp.m * smooth;
+        v.gain = v.gain * (1-smooth) + inp.g * smooth;
+        v.pan = v.pan * 0.9 + inp.p * 0.1;
+    });
+
+    // 2. Decay others
+    this.voices.forEach((v,i) => {
+        if (!used.has(i) && v.alive) {
+            v.age++;
+            v.gain *= 0.7;
+            if (v.age > persistenceFrames || v.gain < 0.01) { v.alive = false; v.gain = 0; }
+        }
+    });
+
+    const active = this.voices.map(v => ({ midi: Math.round(v.midi), gain: v.gain, pan: v.pan })); /*.filter(v=>v.gain > 0.001)*/
+
+    return {
+      done: false, preset: 'SpectralChoir', t: this.t, sC: data.sC, window: { i0:data.i0, i1:data.i1 },
+      voices: active, voiceCount: inputs.length
+    };
+  }
+}
+
+/** ---------------------------------------------------------
+ *  4) Audio Engine
+ *  --------------------------------------------------------- */
+class SynthEngine {
+  constructor() {
+    this.ctx = null;
+    this.started = false;
+    this.nodes = {}; // Store nodes in object for cleaner access
+    this.choir = [];
+  }
+
+  async init() {
+    if (this.started) {
+      if (this.ctx && this.ctx.state === 'suspended') await this.ctx.resume();
+      // Restore gains that were muted in stop()
+      const t = this.ctx.currentTime;
+      this.nodes.master.gain.setTargetAtTime(0.9, t, 0.1);
+      this.nodes.dry.gain.setTargetAtTime(0.8, t, 0.1);
+      this.nodes.wet.gain.setTargetAtTime(0.2, t, 0.1);
+      return;
+    }
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    this.ctx = new Ctx();
+
+    // Routing
+    const t = this.ctx.currentTime;
+    const master = this.ctx.createGain();
+    master.gain.value = 0.9;
+    master.connect(this.ctx.destination);
+
+    const dry = this.ctx.createGain();
+    dry.gain.value = 0.8;
+    dry.connect(master);
+    
+    const wet = this.ctx.createGain();
+    wet.gain.value = 0.2;
+    
+    const conv = this.ctx.createConvolver();
+    conv.buffer = this._impulse(1.6, 2.0);
+    wet.connect(conv);
+    conv.connect(master);
+
+    // Analyzer for visualization
+    this.analyser = this.ctx.createAnalyser();
+    this.analyser.fftSize = 2048;
+    this.analyser.smoothingTimeConstant = 0.85;
+    master.connect(this.analyser);
+
+    this.nodes = { master, dry, wet, conv };
+
+    // Standard Components
+    this._initHybrid();
+    this._initChoir();
+    
+    this.started = true;
+  }
+
+  _impulse(dur, decay) {
+    const len = this.ctx.sampleRate * dur;
+    const b = this.ctx.createBuffer(2, len, this.ctx.sampleRate);
+    for(let c=0; c<2; c++) {
+      const d = b.getChannelData(c);
+      for(let i=0; i<len; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, decay);
+    }
+    return b;
+  }
+  
+  _createNode(type, freq, typeStr="sine") {
+      const o = this.ctx.createOscillator();
+      o.type = typeStr;
+      if(freq) o.frequency.value = freq;
+      o.start();
+      return o;
+  }
+  
+  _acc(target, time, val) { target.setTargetAtTime(val, this.ctx.currentTime, time); }
+
+  _initHybrid() {
+    const { ctx, nodes } = this;
+    
+    // Bass
+    const bO = this._createNode('osc', 0, 'triangle');
+    const bG = ctx.createGain(); bG.gain.value=0;
+    bO.connect(bG); bG.connect(nodes.dry); bG.connect(nodes.wet);
+    
+    // Melody (Hybrid & RiverMelody)
+    const mO1 = this._createNode('osc', 0, 'sine');
+    const mO2 = this._createNode('osc', 0, 'triangle');
+    const mG = ctx.createGain(); mG.gain.value=0;
+    const mMix = ctx.createGain(); mMix.gain.value = 0.5;
+    mO1.connect(mMix); mO2.connect(mMix); mMix.connect(mG);
+    mG.connect(nodes.dry); mG.connect(nodes.wet);
+
+    // Drone
+    const dO1 = this._createNode('osc', 0, 'sine');
+    const dO2 = this._createNode('osc', 0, 'triangle');
+    const dF = ctx.createBiquadFilter(); dF.frequency.value = 800; dF.type='lowpass';
+    const dG = ctx.createGain(); dG.gain.value=0;
+    dO1.connect(dF); dO2.connect(dF); dF.connect(dG);
+    dG.connect(nodes.dry); dG.connect(nodes.wet);
+
+    // Noise (Optimized: BufferSource instead of ScriptProcessor)
+    const bufSize = ctx.sampleRate * 2;
+    const nBuf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+    const nD = nBuf.getChannelData(0);
+    for(let i=0; i<bufSize; i++) nD[i] = (Math.random()*2-1)*0.4;
+    
+    const nSrc = ctx.createBufferSource();
+    nSrc.buffer = nBuf;
+    nSrc.loop = true;
+    nSrc.start();
+    
+    const nF = ctx.createBiquadFilter(); nF.type='bandpass'; nF.frequency.value=1800; nF.Q.value=0.7;
+    const nG = ctx.createGain(); nG.gain.value=0;
+    nSrc.connect(nF); nF.connect(nG); nG.connect(nodes.dry); nG.connect(nodes.wet);
+
+    Object.assign(this.nodes, { bO, bG, mO1, mO2, mG, dO1, dO2, dG, nF, nG });
+  }
+
+  _initChoir() {
+      for(let i=0; i<12; i++) {
+        const o1 = this._createNode('osc',0,'sine');
+        const o2 = this._createNode('osc',0,'triangle');
+        const g = this.ctx.createGain(); g.gain.value=0;
+        const f = this.ctx.createBiquadFilter(); f.frequency.value=3000;
+        const p = this.ctx.createStereoPanner();
+        o1.connect(g); o2.connect(g); g.connect(f); f.connect(p);
+        p.connect(this.nodes.dry); p.connect(this.nodes.wet);
+        this.choir.push({ o1, o2, g, f, p });
+      }
+  }
+
+  setReverb(mix) {
+    if(!this.started) return;
+    this._acc(this.nodes.wet.gain, 0.05, 0.6 * mix);
+    this._acc(this.nodes.dry.gain, 0.05, 0.9 * (1 - 0.35 * mix));
+  }
+
+  freq(mid) { return 440 * Math.pow(2, (mid-69)/12); }
+
+  apply(c, p) {
+    if(!this.started) return;
+    const { bO, bG, mO1, mO2, mG, dO1, dO2, dG, nF, nG } = this.nodes;
+    
+    // Default silence everything slightly
+    const S = 0.1; 
+    
+    if (c.preset === 'HybridPeak') {
+        this._acc(dG.gain, S, 0); // mute drone
+        this.choir.forEach(v => this._acc(v.g.gain, S, 0)); // mute choir
+        
+        // Bass
+        this._acc(bO.frequency, 0.03, this.freq(c.bass.midi));
+        this._acc(bG.gain, 0.08, 0.22 * c.bass.gain);
+        
+        // Melody
+        const f = this.freq(c.melody.midi);
+        this._acc(mO1.frequency, 0.02, f);
+        this._acc(mO2.frequency, 0.02, f*2);
+        this._acc(mG.gain, 0.03, c.melody.gate ? 0.2 * c.melody.gain : 0);
+        
+        // Noise
+        this._acc(nG.gain, 0.05, p.noiseMix * 0.35 * c.water.noiseGain);
+        this._acc(nF.frequency, 0.08, 1200 + 2200 * c.water.noiseGain);
+
+    } else if (c.preset === 'RiverMelody') {
+        this._acc(bG.gain, S, 0);
+        this._acc(nG.gain, S, 0);
+        this.choir.forEach(v => this._acc(v.g.gain, S, 0));
+        
+        // Melody
+        const f = this.freq(c.melody.midi);
+        this._acc(mO1.frequency, 0.015, f);
+        this._acc(mO2.frequency, 0.015, f*2);
+        this._acc(mG.gain, c.melody.retrigger?0.01:0.05, c.melody.gate ? 0.28 * c.melody.velocity : 0);
+        
+        // Drone
+        const df = this.freq(c.drone.midi + (p.droneOctave||-1)*12);
+        this._acc(dO1.frequency, 0.2, df);
+        this._acc(dO2.frequency, 0.2, df*1.5);
+        this._acc(dG.gain, 0.15, (p.droneMix||0.3) * 0.25 * c.drone.gain);
+
+    } else { // SpectralChoir
+        this._acc(bG.gain, S, 0);
+        this._acc(mG.gain, S, 0);
+        this._acc(nG.gain, S, 0);
+        this._acc(dG.gain, S, 0);
+        
+        const N = Math.min(c.voices.length, 12);
+        for(let i=0; i<12; i++) {
+            if (i<N) {
+                const v = c.voices[i];
+                const f = this.freq(v.midi);
+                const cv = this.choir[i];
+                this._acc(cv.o1.frequency, 0.08, f);
+                this._acc(cv.o2.frequency, 0.08, f*2);
+                this._acc(cv.g.gain, 0.06, 0.15 * v.gain);
+                this._acc(cv.p.pan, 0.1, v.pan);
+                this._acc(cv.f.frequency, 0.1, clamp(1500+(v.midi-48)*50, 800, 8000));
+            } else {
+                this._acc(this.choir[i].g.gain, 0.15, 0);
+            }
+        }
+    }
+  }
+
+  stop() {
+      if(!this.started) return;
+      Object.values(this.nodes).forEach(n => { if(n instanceof AudioParam || n.gain) this._acc(n.gain || n, 0.05, 0); });
+      this.choir.forEach(v => this._acc(v.g.gain, 0.05, 0));
+  }
+}
+
+/** ---------------------------------------------------------
+ *  5) App Wiring
+ *  --------------------------------------------------------- */
+const els = {};
+['riverSelect','presetSelect','L','v','alpha','sticky','scaleSelect','rootSelect',
+ 'noiseMix','reverbMix','prominence','maxHold','droneMix','droneOctave',
+ 'voicesN','tiltLambda','freqSmooth','persistence','playBtn','stopBtn','recalcBtn',
+ 'status','canvas','spectralCanvas','progressBar'].forEach(id => els[id] = document.getElementById(id));
+
+// Helper for UI value labels
+const updateLabels = () => {
+    document.querySelectorAll('.val').forEach(el => {
+        const inp = document.getElementById(el.id.replace('Val',''));
+        if(inp) el.textContent = (+inp.value).toFixed(inp.step.includes('.')?2:0);
+    });
+};
+
+const ctx2d = els.canvas.getContext("2d");
+const ctxSpec = els.spectralCanvas.getContext("2d");
+const STATE = { ds: 50, frameHz: 20 };
+// v1.0.1 - Hosted on GitHub
+const APP_VERSION = "1.0.1";
+let engine = new SynthEngine();
+let riverRes = null, curv = null, analyzer = null, timer = null, raf = null, specRaf = null, playing = false;
+
+function setStatus(s) { 
+  els.status.innerHTML = `<span>${s}</span> <span style="float:right; opacity:0.3; font-size:10px;">v${APP_VERSION}</span>`;
+}
+
+async function loadRiver(id) {
+    els.playBtn.disabled = true;
+    try {
+        const cat = RIVER_CATALOG.find(r => r.id === id);
+        let pts = cat.type === 'synthetic' ? generateSyntheticRiver(id) : riverCache[id];
+        
+        if (!pts && (cat.type === 'osm' || cat.type === 'coastline')) {
+            // Check IndexedDB first
+            try {
+                pts = await riverDatabase.get(id);
+                if (pts) {
+                    console.log('Loaded from IndexedDB:', id);
+                    riverCache[id] = pts;
+                }
+            } catch (err) {
+                console.warn('DB Get failed', err);
+            }
+
+            // If still not found, fetch from OSM
+            if (!pts) {
+                setStatus("Fetching OSM data...");
+                pts = await fetchFeatureFromOSM(cat);
+                pts = cleanRiverPoints(pts); // Remove duplicates before saving
+                
+                if (pts.length > 5000) pts = simplifyPolyline(pts, 0.0002);
+                riverCache[id] = pts;
+                
+                // Save to DB
+                try {
+                    await riverDatabase.put(id, pts);
+                    console.log('Saved to IndexedDB:', id);
+                } catch (err) {
+                    console.warn('DB Put failed', err);
+                }
+            }
+        }
+        
+        // Process
+        const proj = projectLonLatToMeters(pts);
+        riverRes = resampleByArcLength(proj.x, proj.y, STATE.ds);
+        curv = curvatureSignal(riverRes);
+        setAnalyzer();
+        setStatus(`Loaded ${cat.name} (${(riverRes.total/1e3).toFixed(1)}km)`);
+        draw();
+    } catch(e) {
+        setStatus("Error: " + e.message);
+        console.error(e);
+    } finally {
+        els.playBtn.disabled = false;
+    }
+}
+
+function setAnalyzer() {
+    if(!curv) return;
+    const map = { 'HybridPeak': HybridPeakAnalyzer, 'RiverMelody': RiverMelodyAnalyzer, 'SpectralChoir': SpectralChoirAnalyzer };
+    const Cls = map[els.presetSelect.value];
+    analyzer = new Cls(curv);
+}
+
+function getParams() {
+    const o = { dt: 1/STATE.frameHz };
+    ['L','v','alpha','sticky','noiseMix','reverbMix','prominence','maxHold','droneMix',
+     'droneOctave','voicesN','tiltLambda','freqSmooth','persistence'].forEach(k => o[k] = +els[k].value);
+    o.stickySemis = o.sticky; // alias
+    o.persistenceFrames = o.persistence;
+    o.scale = els.scaleSelect.value;
+    o.root = els.rootSelect.value;
+    return o;
+}
+
+function start() {
+    if (playing) return;
+    if (!curv) { alert("Please wait for river to load."); return; }
+    
+    const p = getParams();
+    if (p.L < 40*STATE.ds) return alert("Window L too small");
+    
+    playing = true;
+    analyzer.reset(p.L);
+    
+    engine.init().then(() => {
+        engine.setReverb(p.reverbMix);
+        setStatus(`Playing... (L=${p.L}m, v=${p.v}m/s)`);
+        
+        // Start spectrum loop
+        drawSpectrum();
+
+        // Main Loop
+        timer = setInterval(() => {
+            if (!playing) return;
+            const pars = getParams();
+            engine.setReverb(pars.reverbMix);
+            
+            try {
+                const f = analyzer.frame(pars);
+                if (f.done) {
+                    stop();
+                } else {
+                    // Update progress bar
+                    if (document.activeElement !== els.progressBar) {
+                         const pct = (f.sC / riverRes.total) * 100;
+                         els.progressBar.value = pct;
+                         document.getElementById('progressVal').textContent = pct.toFixed(1) + '%';
+                    }
+
+                    engine.apply(f, pars);
+                    raf = requestAnimationFrame(() => draw(f));
+                }
+            } catch (e) {
+                console.error(e);
+                stop();
+                setStatus("Error: " + e.message);
+            }
+        }, 1000/STATE.frameHz);
+    }).catch(e => {
+        console.error(e);
+        stop();
+        setStatus("Audio Init Error: " + e.message);
+    });
+}
+
+function stop() {
+    playing = false;
+    clearInterval(timer);
+    cancelAnimationFrame(raf);
+    cancelAnimationFrame(specRaf);
+    engine.stop();
+    draw(null);
+    setStatus("Stopped");
+}
+
+function draw(f) {
+    const w = els.canvas.width, h = els.canvas.height;
+    ctx2d.clearRect(0,0,w,h);
+    if (!riverRes) return;
+    
+    // Rotate/Scale river to fit
+    // Ideally cache this projection but it's cheap enough for 2-3k points
+    const { x, y } = riverRes;
+    const avgX = (x[0]+x[x.length-1])/2, avgY = (y[0]+y[y.length-1])/2;
+    const dx = x[x.length-1]-x[0], dy=y[y.length-1]-y[0];
+    const ang = -Math.atan2(dy,dx);
+    const ca=Math.cos(ang), sa=Math.sin(ang);
+    
+    // Auto-scale
+    let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9;
+    // We can just iterate sample points to find bounds
+    // Optimization: Just check every 10th point for bounding box roughly
+    const rx = [], ry = [];
+    for(let i=0; i<x.length; i+=5) { // stride for speed
+        const nx = (x[i]-avgX)*ca - (y[i]-avgY)*sa;
+        const ny = (x[i]-avgX)*sa + (y[i]-avgY)*ca;
+        if(nx<minX) minX=nx; if(nx>maxX) maxX=nx;
+        if(ny<minY) minY=ny; if(ny>maxY) maxY=ny;
+    }
+    const scale = Math.min((w-40)/(maxX-minX||1), (h-40)/(maxY-minY||1));
+    const ox = w/2 - (minX+maxX)/2 * scale;
+    const oy = h/2 - (minY+maxY)/2 * scale;
+
+    const tr = (i) => {
+        const nx = (x[i]-avgX)*ca - (y[i]-avgY)*sa;
+        const ny = (x[i]-avgX)*sa + (y[i]-avgY)*ca;
+        return [ox + nx*scale, h - (oy + ny*scale)];
+    };
+
+    ctx2d.strokeStyle = "#4a87ff";
+    ctx2d.lineWidth = 2;
+    ctx2d.beginPath();
+    let p = tr(0);
+    ctx2d.moveTo(p[0],p[1]);
+    for(let i=1; i<x.length; i+=2) { // draw simplified
+        p = tr(i); ctx2d.lineTo(p[0],p[1]);
+    }
+    ctx2d.stroke();
+
+    if (f && f.window) {
+        ctx2d.strokeStyle = "#fff";
+        ctx2d.lineWidth = 4;
+        ctx2d.beginPath();
+        const { i0, i1 } = f.window;
+        p = tr(i0); ctx2d.moveTo(p[0],p[1]);
+        for(let i=i0; i<=i1; i++) {
+             p = tr(i); ctx2d.lineTo(p[0],p[1]);
+        }
+        ctx2d.stroke();
+        
+        ctx2d.fillStyle = "#fff";
+        ctx2d.font = "14px monospace";
+        ctx2d.fillText(`Dist: ${(f.sC/1e3).toFixed(1)}km`, 20, 30);
+    }
+}
+
+function drawSpectrum() {
+    if (!playing || !engine.analyser) return;
+
+    const w = els.spectralCanvas.width;
+    const h = els.spectralCanvas.height;
+    const bufferLength = engine.analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    engine.analyser.getByteFrequencyData(dataArray);
+
+    ctxSpec.clearRect(0, 0, w, h);
+    ctxSpec.fillStyle = '#0c121b'; // Match bg
+    ctxSpec.fillRect(0, 0, w, h);
+
+    const barWidth = (w / bufferLength) * 2.5;
+    let barHeight;
+    let x = 0;
+
+    for (let i = 0; i < bufferLength; i++) {
+        barHeight = dataArray[i] / 255 * h;
+
+        const r = barHeight + 25 * (i / bufferLength);
+        const g = 250 * (i / bufferLength);
+        const b = 50;
+
+        ctxSpec.fillStyle = `rgb(${r},${g},${b})`;
+        ctxSpec.fillRect(x, h - barHeight, barWidth, barHeight);
+
+        x += barWidth + 1;
+    }
+
+    specRaf = requestAnimationFrame(drawSpectrum);
+}
+
+// Init
+(function(){
+    // Setup Region Select
+    const grps = {};
+    RIVER_CATALOG.forEach(r => {
+        const reg = r.region || 'other';
+        if(!grps[reg]) grps[reg] = document.createElement('optgroup');
+        grps[reg].label = reg;
+        const o = document.createElement('option');
+        o.value=r.id; o.textContent=r.name;
+        grps[reg].appendChild(o);
+    });
+    // Append to select (clear first if needed, but it's empty in HTML)
+    Object.values(grps).forEach(g => els.riverSelect.appendChild(g));
+
+    // Events
+    els.riverSelect.onchange = () => { stop(); loadRiver(els.riverSelect.value); };
+    els.presetSelect.onchange = () => { 
+        stop(); 
+        setAnalyzer(); 
+        document.getElementById('riverMelodyControls').style.display = els.presetSelect.value==='RiverMelody'?'grid':'none';
+        document.getElementById('droneControls').style.display = els.presetSelect.value==='RiverMelody'?'grid':'none';
+        const sc = els.presetSelect.value==='SpectralChoir';
+        document.getElementById('spectralChoirControls1').style.display = sc?'grid':'none';
+        document.getElementById('spectralChoirControls2').style.display = sc?'grid':'none';
+    };
+    els.playBtn.onclick = start;
+    els.stopBtn.onclick = stop;
+    els.recalcBtn.onclick = () => { if(curv) { curv = curvatureSignal(riverRes); setAnalyzer(); } };
+    
+    // Progress Bar
+    els.progressBar.oninput = () => {
+        const val = +els.progressBar.value;
+        document.getElementById('progressVal').textContent = val.toFixed(1) + '%';
+        if (riverRes && analyzer) {
+            const dist = (val / 100) * riverRes.total;
+            analyzer.seek(dist);
+            if (!playing) {
+                // Preview at new location
+                const pars = getParams();
+                // We use computeWindow directly to peek without advancing time
+                const f = analyzer.computeWindow(pars);
+                if (f) draw(f);
+            }
+        }
+    };
+
+    document.querySelectorAll('input, select').forEach(e => e.addEventListener('input', updateLabels));
+    
+    // Start
+    updateLabels();
+    els.presetSelect.onchange(); // trigger UI visibility
+    loadRiver(RIVER_CATALOG[0].id);
+})();
+</script>
+</body>
+</html>
