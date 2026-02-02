@@ -35,6 +35,32 @@
     
     .view-panel { display: none; }
     .view-panel.active-view { display: block; }
+
+    /* Desktop Dashboard Layout */
+    @media (min-width: 801px) {
+      body {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 20px;
+        max-width: 1600px;
+        margin: 0 auto;
+        align-items: start;
+      }
+      h1 { grid-column: 1 / -1; }
+      .nav-tabs { display: none; }
+      
+      /* Force display all panels */
+      .view-panel { display: block !important; }
+      
+      /* Grid Placement */
+      #view-river { grid-column: 1; grid-row: 2 / span 2; }
+      #view-sonif { grid-column: 2; grid-row: 2; }
+      #view-info  { grid-column: 2; grid-row: 3; }
+
+      /* Visual Tweaks for Desktop */
+      canvas { height: auto; aspect-ratio: 3/2; max-height: 600px; }
+      .info-icon { display: inline-flex; } /* Restore tooltips */
+    }
     
     /* Hide tooltips on mobile/tab layout to reduce clutter, moved to info page */
     .info-icon { display: none; } 
@@ -1452,8 +1478,8 @@ const updateLabels = () => {
 const ctx2d = els.canvas.getContext("2d");
 const ctxSpec = els.spectralCanvas.getContext("2d");
 const STATE = { ds: 50, frameHz: 20 };
-// v1.0.1 - Hosted on GitHub
-const APP_VERSION = "1.0.1";
+// v1.0.2 - Responsive Desktop Layout
+const APP_VERSION = "1.0.2";
 let engine = new SynthEngine();
 let riverRes = null, curv = null, analyzer = null, timer = null, raf = null, specRaf = null, playing = false;
 
