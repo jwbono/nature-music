@@ -1596,45 +1596,33 @@ function start() {
             const pars = getParams();
             engine.setReverb(pars.reverbMix); // Dynamic reverb update
             
-            const res = analyzer.frame(pars);
-            
-            if (res.done) { stop(); return; }
-            
-            draw(res);
-            engine.render(res);
+            try {
+                const res = analyzer.frame(pars);
+                
+                if (res.done) {
+                    stop(); 
+                    return; 
+                }
+                
+                // Update Progress Bar
+                if (document.activeElement !== els.progressBar) {
+                        const pct = (res.sC / riverRes.total) * 100;
+                        els.progressBar.value = pct;
+                        document.getElementById('progressVal').textContent = pct.toFixed(1) + '%';
+                }
+                
+                engine.apply(res, pars);
+                raf = requestAnimationFrame(() => draw(res));
+            } catch (e) {
+                console.error(e);
+                stop();
+                setStatus("Loop Error: " + e.message);
+            }
         }, 1000 / STATE.frameHz);
     }).catch(e => {
         console.error(e);
         playing = false;
         setStatus("Audio Error: " + e.message);
-    });
-}
-            
-            try {
-                const f = analyzer.frame(pars);
-                if (f.done) {
-                    stop();
-                } else {
-                    // Update progress bar
-                    if (document.activeElement !== els.progressBar) {
-                         const pct = (f.sC / riverRes.total) * 100;
-                         els.progressBar.value = pct;
-                         document.getElementById('progressVal').textContent = pct.toFixed(1) + '%';
-                    }
-
-                    engine.apply(f, pars);
-                    raf = requestAnimationFrame(() => draw(f));
-                }
-            } catch (e) {
-                console.error(e);
-                stop();
-                setStatus("Error: " + e.message);
-            }
-        }, 1000/STATE.frameHz);
-    }).catch(e => {
-        console.error(e);
-        stop();
-        setStatus("Audio Init Error: " + e.message);
     });
 }
 
