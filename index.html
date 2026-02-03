@@ -148,7 +148,7 @@
   <!-- VIEW 1: RIVER -->
   <div id="view-river" class="view-panel active-view">
     <div class="card" style="margin-bottom:12px;">
-      <label>Selected Feature
+      <label>Selected Natural Feature
         <select id="riverSelect"></select>
       </label>
     </div>
@@ -1257,16 +1257,26 @@ class SynthEngine {
     this.choir = [];
   }
 
-  async init() {
+  init() {
     if (this.started) {
-      if (this.ctx && this.ctx.state === 'suspended') await this.ctx.resume();
-      // Restore gains that were muted in stop()
+      if (this.ctx && this.ctx.state === 'suspended') {
+        // Resume returns a promise
+        return this.ctx.resume().then(() => {
+           const t = this.ctx.currentTime;
+           this.nodes.master.gain.setTargetAtTime(0.9, t, 0.1);
+           this.nodes.dry.gain.setTargetAtTime(0.8, t, 0.1);
+           this.nodes.wet.gain.setTargetAtTime(0.2, t, 0.1);
+        });
+      }
+      // Already running, just ensure gains are up
       const t = this.ctx.currentTime;
       this.nodes.master.gain.setTargetAtTime(0.9, t, 0.1);
       this.nodes.dry.gain.setTargetAtTime(0.8, t, 0.1);
       this.nodes.wet.gain.setTargetAtTime(0.2, t, 0.1);
-      return;
+      return Promise.resolve();
     }
+    
+    // Create Context Synchronously (Critical for Mobile)
     const Ctx = window.AudioContext || window.webkitAudioContext;
     this.ctx = new Ctx();
 
@@ -1301,6 +1311,7 @@ class SynthEngine {
     this._initChoir();
     
     this.started = true;
+    return Promise.resolve();
   }
 
   _impulse(dur, decay) {
@@ -1767,6 +1778,17 @@ function drawSpectrum() {
     updateLabels();
     els.presetSelect.onchange(); // trigger UI visibility
     loadRiver(RIVER_CATALOG[0].id);
+
+    // Mobile Unlock/Resume Helper
+    const unlockAudio = () => {
+        if (engine && engine.ctx && engine.ctx.state === 'suspended') {
+            engine.ctx.resume().then(() => {
+                // Remove listeners once unlocked
+                ['touchstart', 'touchend', 'click'].forEach(e => document.removeEventListener(e, unlockAudio));
+            });
+        }
+    };
+    ['touchstart', 'touchend', 'click'].forEach(e => document.addEventListener(e, unlockAudio));
 })();
 </script>
 </body>
