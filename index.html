@@ -1258,60 +1258,61 @@ class SynthEngine {
   }
 
   init() {
-    if (this.started) {
-      if (this.ctx && this.ctx.state === 'suspended') {
-        // Resume returns a promise
-        return this.ctx.resume().then(() => {
-           const t = this.ctx.currentTime;
-           this.nodes.master.gain.setTargetAtTime(0.9, t, 0.1);
-           this.nodes.dry.gain.setTargetAtTime(0.8, t, 0.1);
-           this.nodes.wet.gain.setTargetAtTime(0.2, t, 0.1);
-        });
-      }
-      // Already running, just ensure gains are up
-      const t = this.ctx.currentTime;
-      this.nodes.master.gain.setTargetAtTime(0.9, t, 0.1);
-      this.nodes.dry.gain.setTargetAtTime(0.8, t, 0.1);
-      this.nodes.wet.gain.setTargetAtTime(0.2, t, 0.1);
-      return Promise.resolve();
+    // 1. Create Context if missing
+    if (!this.ctx) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        this.ctx = new Ctx();
+        
+        // Routing
+        const t = this.ctx.currentTime;
+        const master = this.ctx.createGain();
+        master.gain.value = 0.9;
+        master.connect(this.ctx.destination);
+
+        const dry = this.ctx.createGain();
+        dry.gain.value = 0.8;
+        dry.connect(master);
+        
+        const wet = this.ctx.createGain();
+        wet.gain.value = 0.2;
+        
+        const conv = this.ctx.createConvolver();
+        conv.buffer = this._impulse(1.6, 2.0);
+        wet.connect(conv);
+        conv.connect(master);
+
+        // Analyzer for visualization
+        this.analyser = this.ctx.createAnalyser();
+        this.analyser.fftSize = 2048;
+        this.analyser.smoothingTimeConstant = 0.85;
+        master.connect(this.analyser);
+
+        this.nodes = { master, dry, wet, conv };
+
+        // Standard Components
+        this._initHybrid();
+        this._initChoir();
+        
+        this.started = true;
     }
-    
-    // Create Context Synchronously (Critical for Mobile)
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    this.ctx = new Ctx();
 
-    // Routing
-    const t = this.ctx.currentTime;
-    const master = this.ctx.createGain();
-    master.gain.value = 0.9;
-    master.connect(this.ctx.destination);
-
-    const dry = this.ctx.createGain();
-    dry.gain.value = 0.8;
-    dry.connect(master);
-    
-    const wet = this.ctx.createGain();
-    wet.gain.value = 0.2;
-    
-    const conv = this.ctx.createConvolver();
-    conv.buffer = this._impulse(1.6, 2.0);
-    wet.connect(conv);
-    conv.connect(master);
-
-    // Analyzer for visualization
-    this.analyser = this.ctx.createAnalyser();
-    this.analyser.fftSize = 2048;
-    this.analyser.smoothingTimeConstant = 0.85;
-    master.connect(this.analyser);
-
-    this.nodes = { master, dry, wet, conv };
-
-    // Standard Components
-    this._initHybrid();
-    this._initChoir();
-    
-    this.started = true;
-    return Promise.resolve();
+    // 2. Always Resume (required for mobile unlock)
+    if (this.ctx.state === 'suspended') {
+        return this.ctx.resume().then(() => {
+             // Unmute
+             const t = this.ctx.currentTime;
+             this.nodes.master.gain.setTargetAtTime(0.9, t, 0.1);
+             this.nodes.dry.gain.setTargetAtTime(0.8, t, 0.1);
+             this.nodes.wet.gain.setTargetAtTime(0.2, t, 0.1);
+        });
+    } else {
+        // Already running, just ensure gains are up
+        const t = this.ctx.currentTime;
+        this.nodes.master.gain.setTargetAtTime(0.9, t, 0.1);
+        this.nodes.dry.gain.setTargetAtTime(0.8, t, 0.1);
+        this.nodes.wet.gain.setTargetAtTime(0.2, t, 0.1);
+        return Promise.resolve();   
+    }
   }
 
   _impulse(dur, decay) {
@@ -1576,21 +1577,38 @@ function start() {
     const p = getParams();
     if (p.L < 40*STATE.ds) return alert("Window L too small");
     
+    // Optimistically set playing=true to make UI responsive
     playing = true;
     analyzer.reset(p.L);
-    
+    setStatus("Initializing Audio...");
+
     engine.init().then(() => {
         engine.setReverb(p.reverbMix);
-        setStatus(`Playing... (L=${p.L}m, v=${p.v}m/s)`);
+        setStatus(`Playing (L=${p.L}m, v=${p.v}m/s)`);
         
         // Start spectrum loop
         drawSpectrum();
 
         // Main Loop
+        if(timer) clearInterval(timer);
         timer = setInterval(() => {
             if (!playing) return;
             const pars = getParams();
-            engine.setReverb(pars.reverbMix);
+            engine.setReverb(pars.reverbMix); // Dynamic reverb update
+            
+            const res = analyzer.frame(pars);
+            
+            if (res.done) { stop(); return; }
+            
+            draw(res);
+            engine.render(res);
+        }, 1000 / STATE.frameHz);
+    }).catch(e => {
+        console.error(e);
+        playing = false;
+        setStatus("Audio Error: " + e.message);
+    });
+}
             
             try {
                 const f = analyzer.frame(pars);
