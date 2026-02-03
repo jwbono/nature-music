@@ -1257,16 +1257,30 @@ class SynthEngine {
     this.choir = [];
   }
 
+  // Pre-initialize context to unlock mobile audio
+  unlock() {
+      if (!this.ctx) {
+          const Ctx = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new Ctx();
+          // Play silent buffer to force unlock
+          const b = this.ctx.createBuffer(1, 1, 22050);
+          const s = this.ctx.createBufferSource();
+          s.buffer = b;
+          s.connect(this.ctx.destination);
+          s.start(0);
+      }
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+  }
+
   init() {
-    // 1. Create Context if missing
-    if (!this.ctx) {
-        const Ctx = window.AudioContext || window.webkitAudioContext;
-        this.ctx = new Ctx();
-        
+    this.unlock(); // Ensure context exists
+
+    // Initialize Graph if not present
+    if (!this.nodes.master) {
         // Routing
         const t = this.ctx.currentTime;
         const master = this.ctx.createGain();
-        master.gain.value = 0.9;
+        master.gain.value = 0; // Start muted
         master.connect(this.ctx.destination);
 
         const dry = this.ctx.createGain();
@@ -1296,23 +1310,16 @@ class SynthEngine {
         this.started = true;
     }
 
-    // 2. Always Resume (required for mobile unlock)
+    // Unmute and ensure running
+    const t = this.ctx.currentTime;
+    this.nodes.master.gain.setTargetAtTime(0.9, t, 0.1);
+    this.nodes.dry.gain.setTargetAtTime(0.8, t, 0.1);
+    this.nodes.wet.gain.setTargetAtTime(0.2, t, 0.1);
+
     if (this.ctx.state === 'suspended') {
-        return this.ctx.resume().then(() => {
-             // Unmute
-             const t = this.ctx.currentTime;
-             this.nodes.master.gain.setTargetAtTime(0.9, t, 0.1);
-             this.nodes.dry.gain.setTargetAtTime(0.8, t, 0.1);
-             this.nodes.wet.gain.setTargetAtTime(0.2, t, 0.1);
-        });
-    } else {
-        // Already running, just ensure gains are up
-        const t = this.ctx.currentTime;
-        this.nodes.master.gain.setTargetAtTime(0.9, t, 0.1);
-        this.nodes.dry.gain.setTargetAtTime(0.8, t, 0.1);
-        this.nodes.wet.gain.setTargetAtTime(0.2, t, 0.1);
-        return Promise.resolve();   
+        return this.ctx.resume();
     }
+    return Promise.resolve();
   }
 
   _impulse(dur, decay) {
@@ -1785,16 +1792,12 @@ function drawSpectrum() {
     els.presetSelect.onchange(); // trigger UI visibility
     loadRiver(RIVER_CATALOG[0].id);
 
-    // Mobile Unlock/Resume Helper
-    const unlockAudio = () => {
-        if (engine && engine.ctx && engine.ctx.state === 'suspended') {
-            engine.ctx.resume().then(() => {
-                // Remove listeners once unlocked
-                ['touchstart', 'touchend', 'click'].forEach(e => document.removeEventListener(e, unlockAudio));
-            });
-        }
+    // Mobile Unlock Strategy: Unlock on FIRST tap anywhere
+    const firstTouch = () => {
+        if(engine) engine.unlock();
+        ['touchstart', 'click'].forEach(e => document.removeEventListener(e, firstTouch));
     };
-    ['touchstart', 'touchend', 'click'].forEach(e => document.addEventListener(e, unlockAudio));
+    ['touchstart', 'click'].forEach(e => document.addEventListener(e, firstTouch, {once:true, capture:true}));
 })();
 </script>
 </body>
