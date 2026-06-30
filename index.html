@@ -8,7 +8,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://overpass-api.de https://overpass.kumi.systems; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://overpass-api.de https://overpass.kumi.systems; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:;">
   <meta name="viewport" content="width=device-width,initial-scale=1.0" />
   <title>Nature Music - Converting Geography to Sound</title>
   <style>
@@ -1490,32 +1490,52 @@ class SynthEngine {
     percSrc.loop = true;
     percSrc.start();
 
-    const percF = ctx.createBiquadFilter();
-    percF.type = 'bandpass';
-    percF.frequency.value = 2000;
-    percF.Q.value = 1.8;
+    // Two voices sharing one noise source: a low "kick" and a high "tick"
+    const percFLo = ctx.createBiquadFilter();
+    percFLo.type = 'bandpass';
+    percFLo.frequency.value = 150;
+    percFLo.Q.value = 2.2;
+    const percGLo = ctx.createGain();
+    percGLo.gain.value = 0;
 
-    const percG = ctx.createGain();
-    percG.gain.value = 0;
+    const percFHi = ctx.createBiquadFilter();
+    percFHi.type = 'bandpass';
+    percFHi.frequency.value = 4000;
+    percFHi.Q.value = 1.4;
+    const percGHi = ctx.createGain();
+    percGHi.gain.value = 0;
 
-    percSrc.connect(percF);
-    percF.connect(percG);
-    percG.connect(nodes.dry);
-    percG.connect(nodes.wet);
+    percSrc.connect(percFLo); percFLo.connect(percGLo);
+    percSrc.connect(percFHi); percFHi.connect(percGHi);
+    percGLo.connect(nodes.dry); percGLo.connect(nodes.wet);
+    percGHi.connect(nodes.dry); percGHi.connect(nodes.wet);
 
-    Object.assign(nodes, { percG, percF });
+    Object.assign(nodes, { percGLo, percFLo, percGHi, percFHi });
   }
 
-  // energy 0–1: high = bassy thud, low = high-freq tick
-  firePerc(energy, p) {
-    if (!this.started || !p.percMix || energy < 0.05) return;
-    const { percG, percF } = this.nodes;
+  // loEnergy/hiEnergy 0–1 from the low/high spatial-frequency bands.
+  // gridIndex alternates which voice is accented, giving a kick/tick groove
+  // instead of one filter sweeping uniformly across the whole spectrum.
+  firePerc(loEnergy, hiEnergy, gridIndex, p) {
+    if (!this.started || !p.percMix) return;
+    const { percGLo, percFLo, percGHi, percFHi } = this.nodes;
     const t = this.ctx.currentTime;
-    percF.frequency.setValueAtTime(clamp(5000 - 4500 * energy, 300, 5000), t);
-    const amp = p.percMix * clamp(energy + 0.25, 0, 1) * 0.5;
-    percG.gain.cancelScheduledValues(t);
-    percG.gain.setValueAtTime(amp, t);
-    percG.gain.setTargetAtTime(0.0001, t, 0.025 + 0.07 * energy);
+    const downbeat = gridIndex % 2 === 0;
+
+    if (loEnergy > 0.05) {
+      percFLo.frequency.setValueAtTime(clamp(220 - 100 * loEnergy, 70, 220), t);
+      const amp = p.percMix * clamp(loEnergy + (downbeat ? 0.25 : 0.05), 0, 1) * 0.6;
+      percGLo.gain.cancelScheduledValues(t);
+      percGLo.gain.setValueAtTime(amp, t);
+      percGLo.gain.setTargetAtTime(0.0001, t, 0.05 + 0.1 * loEnergy);
+    }
+    if (hiEnergy > 0.05) {
+      percFHi.frequency.setValueAtTime(clamp(2500 + 3000 * hiEnergy, 2000, 6000), t);
+      const amp = p.percMix * clamp(hiEnergy + (downbeat ? 0.05 : 0.25), 0, 1) * 0.45;
+      percGHi.gain.cancelScheduledValues(t);
+      percGHi.gain.setValueAtTime(amp, t);
+      percGHi.gain.setTargetAtTime(0.0001, t, 0.02 + 0.03 * hiEnergy);
+    }
   }
 
   setReverb(mix) {
@@ -1526,7 +1546,7 @@ class SynthEngine {
 
   freq(mid) { return 440 * Math.pow(2, (mid-69)/12); }
 
-  apply(c, p, onGrid) {
+  apply(c, p, onGrid, gridIndex) {
     if(!this.started) return;
     const { bO, bG, mO1, mO2, mG, dO1, dO2, dG, nF, nG } = this.nodes;
     
@@ -1551,7 +1571,7 @@ class SynthEngine {
         this._acc(nG.gain, 0.05, p.noiseMix * 0.35 * c.water.noiseGain);
         this._acc(nF.frequency, 0.08, 1200 + 2200 * c.water.noiseGain);
 
-        if (onGrid) this.firePerc(c.water.noiseGain, p);
+        if (onGrid) this.firePerc(c.bass.gain, c.water.noiseGain, gridIndex, p);
 
     } else if (c.preset === 'RiverMelody') {
         this._acc(bG.gain, S, 0);
@@ -1570,7 +1590,7 @@ class SynthEngine {
         this._acc(dO2.frequency, 0.2, df*1.5);
         this._acc(dG.gain, 0.15, (p.droneMix||0.3) * 0.25 * c.drone.gain);
 
-        if (onGrid) this.firePerc(c.melody.gain * 0.6, p);
+        if (onGrid) this.firePerc(c.drone.gain, c.melody.gain * 0.6, gridIndex, p);
 
     } else { // SpectralChoir
         this._acc(bG.gain, S, 0);
@@ -1596,9 +1616,11 @@ class SynthEngine {
         }
 
         if (onGrid) {
-            const avgGain = c.voices.slice(0, Math.max(1, c.voiceCount))
-                .reduce((s, v) => s + v.gain, 0) / Math.max(1, c.voiceCount);
-            this.firePerc(avgGain, p);
+            const active = c.voices.slice(0, Math.max(1, c.voiceCount));
+            const lo = active.filter(v => v.midi < 60);
+            const hi = active.filter(v => v.midi >= 60);
+            const avg = (arr) => arr.length ? arr.reduce((s, v) => s + v.gain, 0) / arr.length : 0;
+            this.firePerc(avg(lo), avg(hi), gridIndex, p);
         }
     }
   }
@@ -1607,7 +1629,8 @@ class SynthEngine {
       if(!this.started) return;
       Object.values(this.nodes).forEach(n => { if(n instanceof AudioParam || n.gain) this._acc(n.gain || n, 0.05, 0); });
       this.choir.forEach(v => this._acc(v.g.gain, 0.05, 0));
-      if (this.nodes.percG) this._acc(this.nodes.percG.gain, 0.02, 0);
+      if (this.nodes.percGLo) this._acc(this.nodes.percGLo.gain, 0.02, 0);
+      if (this.nodes.percGHi) this._acc(this.nodes.percGHi.gain, 0.02, 0);
   }
 }
 
@@ -1749,8 +1772,9 @@ function start() {
                 const prevBeats = beatClock.beats;
                 beatClock.beats += pars.dt * pars.bpm / 60;
                 const subdiv = pars.subdivisions > 0 ? 1 / pars.subdivisions : Infinity;
+                const gridIndex = pars.subdivisions > 0 ? Math.floor(beatClock.beats / subdiv) : 0;
                 const onGrid = pars.subdivisions > 0 &&
-                    Math.floor(beatClock.beats / subdiv) > Math.floor(prevBeats / subdiv);
+                    gridIndex > Math.floor(prevBeats / subdiv);
 
                 const res = analyzer.frame(pars);
 
@@ -1766,7 +1790,7 @@ function start() {
                         document.getElementById('progressVal').textContent = pct.toFixed(1) + '%';
                 }
 
-                engine.apply(res, pars, onGrid);
+                engine.apply(res, pars, onGrid, gridIndex);
                 raf = requestAnimationFrame(() => draw(res));
             } catch (e) {
                 console.error(e);
