@@ -306,55 +306,65 @@
     <div class="card" style="margin-bottom: 20px;">
       <h3>1. How it Works</h3>
       <p class="small">
-        This app translates physical geography into sound. The core unit of data is the <b>Curvature Signal &kappa;(s)</b>: how sharply the river bends at every meter of its length.
+        This app translates physical geography into sound. The core unit of data is the <b>Curvature Signal &kappa;(s)</b>: how sharply a river or coastline bends at every meter of its length. River geometry is fetched live from OpenStreetMap and cached locally.
       </p>
       <p class="small">
-        As the analysis window slides along the river, we perform a <b>Spatial FFT</b> (Fast Fourier Transform). This breaks the river's shape into component sine waves (Spatial Frequencies).
+        As an analysis window slides along the feature, we perform a <b>Spatial FFT</b> (Fast Fourier Transform). This breaks the river's shape into component spatial frequencies, each mapped to a different musical layer:
       </p>
       <ul class="small" style="padding-left:20px; line-height:1.6;">
-        <li><b>Low Frequency (Large Amplitude):</b> Big, sweeping meanders. Mapped to Bass notes.</li>
-        <li><b>Mid Frequency:</b> Tighter loops and bends. Mapped to Melody notes.</li>
-        <li><b>High Frequency:</b> Jagged edges or noise. Mapped to Water Texture.</li>
+        <li><b>Low spatial frequency (large meanders):</b> Big, sweeping bends → Bass notes.</li>
+        <li><b>Mid spatial frequency (tighter loops):</b> Repeated curves → Melody notes.</li>
+        <li><b>High spatial frequency (jagged edges):</b> Rough texture → Percussion &amp; Water noise.</li>
       </ul>
+      <p class="small">
+        Synthesis uses pairs of <b>detuned sine oscillators</b> (8 cents apart) for a warm chorus effect. A <b>convolution reverb</b> with a low-pass-filtered impulse adds space. An internal <b>beat clock</b> can lock percussive hits to a rhythmic grid derived from curvature energy.
+      </p>
     </div>
 
     <div class="card" style="margin-bottom: 20px;">
       <h3>2. Presets (Orchestration)</h3>
       <p class="small">Each preset listens to the river differently:</p>
       <hr style="border:0; border-top:1px solid #2b3d55; margin: 10px 0;">
-      
+
       <h4>HybridPeak</h4>
       <p class="small"><b>Vibe:</b> Structured, musical, rhythmic.</p>
-      <p class="small">Takes the single strongest peak in the Bass range and the strongest peak in the Melody range. The louder the curve, the louder the note. High-frequency "jitter" generates white noise (water sound).</p>
-      
+      <p class="small">Picks the single strongest FFT peak in the Bass band and the strongest in the Melody band. The louder the bend, the louder the note. High-frequency energy drives both water noise and the percussion layer — sections with jagged curves produce stronger, lower-pitched hits.</p>
+
       <h4>RiverMelody</h4>
       <p class="small"><b>Vibe:</b> Meditative, solo instrument.</p>
-      <p class="small">Tracks only the single most dominant feature of the river, regardless of size. Plays it as a solo flute/sine tone, grounded by a constant Drone note for reference.</p>
-      
+      <p class="small">Tracks only the single most dominant feature of the river at any moment. Plays it as a warm sine-chorus tone, grounded by a constant bass drone a octave below. Percussion intensity follows the melody's amplitude — loud bends hit harder.</p>
+
       <h4>SpectralChoir</h4>
       <p class="small"><b>Vibe:</b> Ambient, lush, washing textures.</p>
-      <p class="small">Instead of picking just one or two notes, this maps the <i>entire spectrum</i> to a bank of up to 12 voices. If the river has complex curves, you hear complex chords.</p>
+      <p class="small">Maps the <i>entire curvature spectrum</i> to a bank of up to 12 voices, spread across the stereo field. Complex curves produce complex chords; straight sections let the choir fade to silence. Percussion uses the average voice loudness as its energy source.</p>
     </div>
 
     <div class="card">
       <h3>3. Parameters</h3>
       <ul class="small" style="padding-left:20px; line-height:1.6;">
-        <li><b>Window Length (L):</b> The size of the "eye" looking at the river. 
-            <br><i>Large (10km+):</i> Hears giant bends, slow music.
-            <br><i>Small (1km):</i> Hears local wiggles, fast/nervous music.</li>
-        <li><b>Speed (v):</b> How fast we travel down the river (playback speed).</li>
-        <li><b>Scale/Root:</b> Musical constraints. All raw frequencies are "snapped" to these notes to sound musical.</li>
-        <li><b>Smoothing (&alpha;):</b> Time lag. High smoothing makes notes slide (portamento); low smoothing makes them jump instantly.</li>
-        <li><b>Stickiness:</b> Hysteresis. Prevents the melody from flickering rapidly between two notes. Forces the river to change significantly before the note changes.</li>
-        
-        <li style="margin-top:10px; list-style:none;"><b><i>RiverMelody/Hybrid Specific:</i></b></li>
-        <li><b>Prominence (&rho;):</b> How "confident" a bend must be to trigger a note. High prominence = silence unless there is a very clear curve.</li>
-        <li><b>Max Hold:</b> Maximum duration a single note can sustain on its own. Keeps the melody moving even if the river is straight.</li>
-        <li><b>Drone Mix:</b> Controls the constant background "pedal point" tone that grounds the melody.</li>
-        
-        <li style="margin-top:10px; list-style:none;"><b><i>SpectralChoir Specific:</i></b></li>
-        <li><b>Voices (N):</b> Number of simultaneous singers. More voices = richer, more complex chords.</li>
-        <li><b>Persistence:</b> Stability. High persistence means voices linger like ghosts. Low persistence means they react instantly to the river.</li>
+        <li><b>Window Length (L):</b> The size of the analysis "eye" moving along the river.
+            <br><i>Large (10km+):</i> Hears giant meanders → slow, deep music.
+            <br><i>Small (1–2km):</i> Hears local wiggles → faster, more nervous music.</li>
+        <li><b>Speed (v):</b> How fast the window travels down the river. Higher = faster playback.</li>
+        <li><b>Scale / Root:</b> Musical key. All raw frequencies snap to these notes. Minor Pentatonic (default) is forgiving and almost always sounds good.</li>
+        <li><b>Smoothing (&alpha;):</b> How quickly notes respond to changes. Low values (0.1–0.3) give smooth portamento glides; high values (near 1) make notes jump instantly.</li>
+        <li><b>Stickiness:</b> Hysteresis in semitones. Prevents rapid flickering between two nearby notes — the river must change by this many semitones before the melody follows.</li>
+        <li><b>Noise mix:</b> Volume of the bandpass-filtered water noise layer.</li>
+        <li><b>Reverb:</b> Wet/dry balance of the convolution reverb. Higher values add more space and blur.</li>
+
+        <li style="margin-top:10px; list-style:none;"><b><i>Rhythm:</i></b></li>
+        <li><b>Tempo (BPM):</b> Speed of the internal beat clock that governs when percussive hits fire.</li>
+        <li><b>Beat grid:</b> Subdivision of the clock — Off lets hits flow freely; 1/4, 1/8, or 1/16 note locks them to a pulse. Finer subdivisions give denser, more rhythmic patterns.</li>
+        <li><b>Perc mix:</b> Volume of the percussion layer. High curvature energy = low-frequency thud; low energy = high-frequency tick.</li>
+
+        <li style="margin-top:10px; list-style:none;"><b><i>RiverMelody / HybridPeak specific:</i></b></li>
+        <li><b>Prominence (&rho;):</b> How "confident" a bend must be to trigger a note. High prominence = silence unless there is a very clear, dominant curve.</li>
+        <li><b>Max Hold:</b> Maximum time a note can sustain before the next one is forced. Keeps the melody moving on straight stretches.</li>
+        <li><b>Drone mix:</b> Volume of the constant bass pedal tone that anchors the melody.</li>
+
+        <li style="margin-top:10px; list-style:none;"><b><i>SpectralChoir specific:</i></b></li>
+        <li><b>Voices (N):</b> Number of simultaneous choir voices. More voices = richer chords; total loudness is normalized automatically.</li>
+        <li><b>Persistence:</b> How long a voice lingers after its spectral peak disappears. High = ghostly sustain; low = instant reaction.</li>
       </ul>
 
       <div style="margin-top:20px; text-align:center; display:flex; flex-direction:column; gap:10px;">
