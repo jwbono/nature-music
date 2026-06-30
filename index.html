@@ -12,264 +12,327 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0" />
   <title>Nature Music - Converting Geography to Sound</title>
   <style>
-    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
-    body { margin: 0; padding: 16px; background: #0b0f14; color: #e8eef6; }
-    h1 { margin: 0 0 10px; font-size: 18px; font-weight: 650; }
-    .row { display: grid; grid-template-columns: 320px 1fr; gap: 12px; align-items: start; }
-    .card { background: #101824; border: 1px solid #1b2a3d; border-radius: 12px; padding: 12px; }
-    label { display: block; font-size: 12px; opacity: 0.9; margin-top: 10px; }
-    input[type="range"], select { width: 100%; margin-top: 6px; }
-
-    /* Mobile Responsive Logic */
-    @media (max-width: 800px) {
-      /* Reset grid for pages */
-      .grid2 { grid-template-columns: 1fr; }
-      canvas { max-height: 250px; }
+    :root {
+      font-family: -apple-system, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --bg: #080c12;
+      --surface: #0d1520;
+      --surface-2: #111c2a;
+      --border: #1c2c40;
+      --accent: #38bdf8;
+      --accent-dim: #1d4e66;
+      --text: #e8eef6;
+      --text-dim: #5a7494;
+      --text-mid: #8b9bb4;
     }
-    
-    /* Tab Navigation */
-    .nav-tabs { display: flex; gap: 8px; margin-bottom: 15px; border-bottom: 1px solid #2b3d55; padding-bottom: 8px; }
-    .nav-btn { background: transparent; border: none; color: #8b9bb4; font-weight: 600; font-size: 14px; border-radius: 6px; flex:1; }
-    .nav-btn.active { background: #1b2a3d; color: #fff; border: 1px solid #2b3d55; }
-    .nav-btn:hover { background: #132033; }
-    
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+
+    h1, h2, h3, h4 { margin: 0; font-weight: 650; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .small { font-size: 12px; opacity: 0.85; line-height: 1.5; }
+
+    button {
+      padding: 9px 14px; border-radius: 9px; border: 1px solid var(--border);
+      background: var(--surface-2); color: var(--text); cursor: pointer;
+      font-size: 13px; font-weight: 550; transition: background 0.15s, border-color 0.15s;
+    }
+    button:hover { background: #16263c; border-color: #2b3d55; }
+
+    select {
+      width: 100%; margin-top: 6px; padding: 8px 30px 8px 10px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--surface-2) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6"><path d="M0 0l5 6 5-6z" fill="%235a7494"/></svg>') no-repeat right 12px center;
+      color: var(--text); appearance: none; font-size: 13px; cursor: pointer;
+    }
+    select:focus { outline: none; border-color: var(--accent); }
+
+    label { display: block; font-size: 12px; color: var(--text-mid); margin-top: 14px; }
+    .val { float: right; color: var(--text); font-variant-numeric: tabular-nums; }
+
+    input[type="range"] {
+      width: 100%; margin-top: 8px; height: 4px; border-radius: 2px;
+      background: var(--surface-2); appearance: none; cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      appearance: none; width: 14px; height: 14px; border-radius: 50%;
+      background: var(--accent); border: 2px solid #04222e;
+      box-shadow: 0 0 0 0 rgba(56,189,248,0.4); transition: box-shadow 0.15s;
+    }
+    input[type="range"]:hover::-webkit-slider-thumb,
+    input[type="range"]:focus::-webkit-slider-thumb {
+      box-shadow: 0 0 0 6px rgba(56,189,248,0.18);
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 14px; height: 14px; border-radius: 50%; border: 2px solid #04222e;
+      background: var(--accent);
+    }
+
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+
+    .ctrl-heading {
+      font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--text-dim); font-weight: 650; margin: 22px 0 4px;
+      padding-bottom: 6px; border-bottom: 1px solid var(--border);
+    }
+    .ctrl-heading:first-child { margin-top: 0; }
+
+    canvas { display: block; width: 100%; background: var(--surface); border-radius: 10px; border: 1px solid var(--border); }
+
+    /* Tooltip styles */
+    .info-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: var(--surface-2); color: var(--text-mid); font-size: 10px; font-weight: bold;
+      cursor: help; margin-left: 5px; position: relative; vertical-align: middle; font-style: normal;
+    }
+    .info-icon:hover { background: var(--accent-dim); color: var(--text); }
+    .info-icon .tooltip {
+      visibility: hidden; opacity: 0; position: absolute; bottom: 125%; left: 50%;
+      transform: translateX(-50%); background: #14233a; color: var(--text);
+      padding: 8px 12px; border-radius: 8px; font-size: 11px; font-weight: normal;
+      white-space: normal; width: 220px; text-align: left;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5); border: 1px solid var(--border);
+      z-index: 100; transition: opacity 0.2s, visibility 0.2s; line-height: 1.4;
+    }
+    .info-icon .tooltip::after {
+      content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+      border-width: 6px; border-style: solid; border-color: #14233a transparent transparent transparent;
+    }
+    .info-icon:hover .tooltip { visibility: visible; opacity: 1; }
+
+    /* ---------- Layout: mobile-first ---------- */
     .view-panel { display: none; }
     .view-panel.active-view { display: block; }
 
-    /* Desktop Dashboard Layout */
+    #app-header {
+      display: flex; align-items: center; gap: 16px; padding: 0 18px;
+      height: 56px; border-bottom: 1px solid var(--border); background: var(--surface);
+    }
+    .brand { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+    .brand .name { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+    .brand .tag { font-size: 11px; color: var(--text-dim); }
+    .header-divider { width: 1px; height: 22px; background: var(--border); flex-shrink: 0; }
+    #app-header #riverSelect { max-width: 320px; margin-top: 0; margin-left: auto; }
+
+    .nav-tabs { display: flex; gap: 6px; padding: 10px 14px 0; }
+    .nav-btn {
+      background: transparent; border: 1px solid transparent; color: var(--text-mid);
+      font-weight: 600; font-size: 13px; border-radius: 7px; flex: 1; padding: 9px 8px;
+    }
+    .nav-btn.active { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+    .nav-btn:hover { background: var(--surface-2); }
+
+    main { padding: 14px; }
+
+    #view-river, #view-sonif, #view-info { padding: 14px; }
+
+    .panel-body { padding: 16px; }
+
+    #canvas-wrap canvas#canvas { aspect-ratio: 3/2; height: auto; }
+    #spectrum-wrap { margin-top: 10px; }
+    canvas#spectralCanvas { height: 110px; }
+
+    #transport { margin-top: 14px; }
+    .progress-row { display: flex; align-items: center; gap: 10px; }
+    .progress-row .mono { color: var(--text-mid); font-size: 12px; width: 56px; }
+    .transport-btns { display: flex; gap: 8px; margin-top: 12px; }
+
+    #playBtn {
+      background: var(--accent); border-color: var(--accent); color: #04222e; font-weight: 700;
+    }
+    #playBtn:hover { background: #5cc9fb; }
+    #playBtn.playing { animation: hb 1.4s ease-in-out infinite; }
+    @keyframes hb {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(56,189,248,0.5); }
+      50% { box-shadow: 0 0 0 8px rgba(56,189,248,0); }
+    }
+
+    #status { margin-top: 10px; font-size: 12px; color: var(--text-dim); }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+
+    .footer-actions { margin-top: 26px; display: flex; flex-direction: column; gap: 8px; }
+    .footer-actions button { font-size: 11px; padding: 8px 10px; opacity: 0.8; }
+    .danger { background: #2a1b1b; border-color: #4a2b2b; }
+
+    @media (max-width: 800px) {
+      #app-header #riverSelect { max-width: none; flex: 1; }
+    }
+
+    /* ---------- Desktop dashboard ---------- */
     @media (min-width: 801px) {
+      html, body { height: 100%; overflow: hidden; }
       body {
         display: grid;
-        grid-template-columns: 2fr 1fr;
-        gap: 20px;
-        max-width: 1600px;
-        margin: 0 auto;
-        align-items: start;
+        grid-template-rows: 56px 1fr;
+        grid-template-columns: 1fr 380px;
+        height: 100vh;
       }
-      h1 { grid-column: 1 / -1; }
+      #app-header { grid-column: 1 / -1; grid-row: 1; }
       .nav-tabs { display: none; }
-      
-      /* Force display all panels */
-      .view-panel { display: block !important; }
-      
-      /* Grid Placement */
-      #view-river { grid-column: 1; grid-row: 2 / span 2; }
-      #view-sonif { grid-column: 2; grid-row: 2; }
-      #view-info  { grid-column: 2; grid-row: 3; }
+      .view-panel { display: none !important; }
+      #view-river, #view-sonif { display: flex !important; }
 
-      /* Visual Tweaks for Desktop */
-      canvas { height: auto; aspect-ratio: 3/2; max-height: 600px; }
-      .info-icon { display: inline-flex; } /* Restore tooltips */
-    }
-    
-    /* Hide tooltips on mobile/tab layout to reduce clutter, moved to info page */
-    .info-icon { display: none; } 
+      #view-river {
+        grid-column: 1; grid-row: 2; flex-direction: column;
+        padding: 18px; overflow: hidden; min-height: 0;
+      }
+      #canvas-wrap { flex: 1; min-height: 0; display: flex; }
+      #canvas-wrap canvas#canvas { width: 100%; height: 100%; aspect-ratio: auto; object-fit: contain; }
+      #spectrum-wrap { flex-shrink: 0; }
+      canvas#spectralCanvas { height: 90px; }
+      #transport { flex-shrink: 0; }
 
-    button {
-      padding: 10px 12px; border-radius: 10px; border: 1px solid #2b3d55;
-      background: #132033; color: #e8eef6; cursor: pointer;
+      #view-sonif {
+        grid-column: 2; grid-row: 2; flex-direction: column;
+        border-left: 1px solid var(--border); background: var(--surface);
+        overflow-y: auto; padding: 18px 20px 30px;
+      }
+      #view-info { display: none !important; }
+
+      .info-icon { display: inline-flex; }
     }
-    button:hover { background: #16263c; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; }
-    canvas { width: 100%; height: 320px; background: #0c121b; border-radius: 12px; border: 1px solid #1b2a3d; }
-    .small { font-size: 12px; opacity: 0.85; line-height: 1.35; }
-    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .val { float: right; opacity: 0.9; font-variant-numeric: tabular-nums; }
-    
-    /* Tooltip styles */
-    .info-icon {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: #2b3d55;
-      color: #a0b4cc;
-      font-size: 10px;
-      font-weight: bold;
-      cursor: help;
-      margin-left: 5px;
-      position: relative;
-      vertical-align: middle;
-      font-style: normal;
-    }
-    .info-icon:hover {
-      background: #3a5070;
-      color: #e8eef6;
-    }
-    .info-icon .tooltip {
-      visibility: hidden;
-      opacity: 0;
-      position: absolute;
-      bottom: 125%;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #1e2d42;
-      color: #e8eef6;
-      padding: 8px 12px;
-      border-radius: 8px;
-      font-size: 11px;
-      font-weight: normal;
-      white-space: normal;
-      width: 220px;
-      text-align: left;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-      border: 1px solid #3a5070;
-      z-index: 100;
-      transition: opacity 0.2s, visibility 0.2s;
-      line-height: 1.4;
-    }
-    .info-icon .tooltip::after {
-      content: "";
-      position: absolute;
-      top: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-      border-width: 6px;
-      border-style: solid;
-      border-color: #1e2d42 transparent transparent transparent;
-    }
-    .info-icon:hover .tooltip {
-      visibility: visible;
-      opacity: 1;
-    }
+    .info-icon { display: none; }
+    @media (max-width: 800px) { .info-icon { display: none !important; } }
   </style>
 </head>
 <body>
-  <h1>Nature Music</h1>
+
+  <header id="app-header">
+    <div class="brand">
+      <span class="name">Nature&nbsp;Music</span>
+      <span class="tag">geography &rarr; sound</span>
+    </div>
+    <div class="header-divider"></div>
+    <select id="riverSelect"></select>
+  </header>
 
   <div class="nav-tabs">
-    <button class="nav-btn active" onclick="switchView('river', this)">Natural Feature</button>
+    <button class="nav-btn active" onclick="switchView('river', this)">Feature</button>
     <button class="nav-btn" onclick="switchView('sonif', this)">Sonification</button>
     <button class="nav-btn" onclick="switchView('info', this)">Info</button>
   </div>
 
   <!-- VIEW 1: RIVER -->
   <div id="view-river" class="view-panel active-view">
-    <div class="card" style="margin-bottom:12px;">
-      <label>Selected Natural Feature
-        <select id="riverSelect"></select>
-      </label>
+    <div id="canvas-wrap">
+      <canvas id="canvas" width="900" height="600"></canvas>
     </div>
 
-    <div class="card">
-      <canvas id="canvas" width="900" height="600"></canvas>
-      <canvas id="spectralCanvas" width="900" height="200" style="margin-top: 10px; height: 150px; background: #0c121b; border-radius: 12px; border: 1px solid #1b2a3d;"></canvas>
-      
-      <div style="margin-top: 15px; background: #0c121b; padding: 10px; border-radius: 8px; border: 1px solid #1b2a3d;">
-        <label style="margin:0; display:flex; align-items:center; gap:10px;">
-          <span style="white-space:nowrap; width:80px;">Position <span class="val mono" id="progressVal">0.0%</span></span>
-          <input id="progressBar" type="range" min="0" max="100" step="0.1" value="0" style="width:100%; cursor:pointer;" />
-        </label>
-      </div>
+    <div id="spectrum-wrap">
+      <canvas id="spectralCanvas" width="900" height="200"></canvas>
+    </div>
 
-      <div style="display:flex; gap:10px; margin-top: 12px;">
+    <div id="transport">
+      <div class="progress-row">
+        <span class="mono" id="progressVal">0.0%</span>
+        <input id="progressBar" type="range" min="0" max="100" step="0.1" value="0" style="cursor:pointer;" />
+      </div>
+      <div class="transport-btns">
         <button id="playBtn">Play</button>
         <button id="stopBtn">Stop</button>
         <button id="recalcBtn">Recompute</button>
       </div>
-      <div class="mono" id="status" style="margin-top:10px; color:#8b9bb4;">Ready</div>
+      <div class="mono" id="status">Ready</div>
     </div>
   </div>
 
   <!-- VIEW 2: SONIFICATION -->
   <div id="view-sonif" class="view-panel">
-    <div class="card">
-      <label>Preset (scaffold)
-          <select id="presetSelect">
-            <option value="HybridPeak">HybridPeak (bass+melody+water)</option>
-            <option value="RiverMelody">RiverMelody (melody+drone)</option>
-            <option value="SpectralChoir" selected>SpectralChoir (choral pad)</option>
-            <option value="MeanderDrums" disabled>MeanderDrums (soon)</option>
-            <option value="AdditiveFlow" disabled>AdditiveFlow (soon)</option>
+    <div class="ctrl-heading">Preset</div>
+    <select id="presetSelect">
+      <option value="HybridPeak">HybridPeak (bass+melody+water)</option>
+      <option value="RiverMelody">RiverMelody (melody+drone)</option>
+      <option value="SpectralChoir" selected>SpectralChoir (choral pad)</option>
+      <option value="MeanderDrums" disabled>MeanderDrums (soon)</option>
+      <option value="AdditiveFlow" disabled>AdditiveFlow (soon)</option>
+    </select>
+
+    <div class="ctrl-heading">Playback</div>
+    <label>Window length L (meters) <span class="val mono" id="LVal"></span>
+      <input id="L" type="range" min="500" max="20000" step="100" value="10000" />
+    </label>
+    <label>Window speed v (m/s) <span class="val mono" id="vVal"></span>
+      <input id="v" type="range" min="50" max="5000" step="10" value="1500" />
+    </label>
+
+    <div class="ctrl-heading">Tonality</div>
+    <div class="grid2">
+      <div>
+        <label>Scale
+          <select id="scaleSelect">
+            <option value="pent_minor" selected>Minor Pentatonic</option>
+            <option value="major">Major</option>
+            <option value="minor">Natural Minor</option>
+            <option value="chromatic">Chromatic (no quantize)</option>
           </select>
-      </label>
-
-      <label>Window length L (meters) <span class="val mono" id="LVal"></span>
-        <input id="L" type="range" min="500" max="20000" step="100" value="10000" />
-      </label>
-
-      <label>Window speed v (m/s) <span class="val mono" id="vVal"></span>
-        <input id="v" type="range" min="50" max="5000" step="10" value="1500" />
-      </label>
-
-      <div class="grid2">
-        <div>
-          <label>Scale
-            <select id="scaleSelect">
-              <option value="pent_minor" selected>Minor Pentatonic</option>
-              <option value="major">Major</option>
-              <option value="minor">Natural Minor</option>
-              <option value="chromatic">Chromatic (no quantize)</option>
-            </select>
-          </label>
-        </div>
-        <div>
-          <label>Root
-            <select id="rootSelect">
-              <option value="C">C</option><option value="C#">C#</option><option value="D" selected>D</option>
-              <option value="D#">D#</option><option value="E">E</option><option value="F">F</option>
-              <option value="F#">F#</option><option value="G">G</option><option value="G#">G#</option>
-              <option value="A">A</option><option value="A#">A#</option><option value="B">B</option>
-            </select>
-          </label>
-        </div>
-      </div>
-
-      <div class="grid2">
-        <div>
-          <label>Smoothing α <span class="val mono" id="alphaVal"></span>
-            <input id="alpha" type="range" min="0" max="1" step="0.01" value="0.3" />
-          </label>
-        </div>
-        <div>
-          <label>Stickiness (semitones) <span class="val mono" id="stickyVal"></span>
-            <input id="sticky" type="range" min="0" max="12" step="1" value="2" />
-          </label>
-        </div>
-      </div>
-
-      <div class="grid2">
-        <div>
-          <label>Noise mix <span class="val mono" id="noiseVal"></span>
-            <input id="noiseMix" type="range" min="0" max="1" step="0.01" value="0.2" />
-          </label>
-        </div>
-        <div>
-          <label>Reverb <span class="val mono" id="reverbVal"></span>
-            <input id="reverbMix" type="range" min="0" max="1" step="0.01" value="0.45" />
-          </label>
-        </div>
-      </div>
-
-      <div style="border-top: 1px solid #2b3d55; margin-top: 10px; padding-top: 10px;">
-        <div class="grid2">
-          <div>
-            <label>Tempo (BPM) <span class="val mono" id="bpmVal"></span>
-              <input id="bpm" type="range" min="40" max="160" step="1" value="72" />
-            </label>
-          </div>
-          <div>
-            <label>Beat grid
-              <select id="subdivSelect">
-                <option value="0">Off (free)</option>
-                <option value="4" selected>1/4 note</option>
-                <option value="8">1/8 note</option>
-                <option value="16">1/16 note</option>
-              </select>
-            </label>
-          </div>
-        </div>
-        <label>Perc mix <span class="val mono" id="percMixVal"></span>
-          <input id="percMix" type="range" min="0" max="1" step="0.01" value="0.55" />
         </label>
       </div>
+      <div>
+        <label>Root
+          <select id="rootSelect">
+            <option value="C">C</option><option value="C#">C#</option><option value="D" selected>D</option>
+            <option value="D#">D#</option><option value="E">E</option><option value="F">F</option>
+            <option value="F#">F#</option><option value="G">G</option><option value="G#">G#</option>
+            <option value="A">A</option><option value="A#">A#</option><option value="B">B</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div class="grid2">
+      <div>
+        <label>Smoothing &alpha; <span class="val mono" id="alphaVal"></span>
+          <input id="alpha" type="range" min="0" max="1" step="0.01" value="0.3" />
+        </label>
+      </div>
+      <div>
+        <label>Stickiness (semitones) <span class="val mono" id="stickyVal"></span>
+          <input id="sticky" type="range" min="0" max="12" step="1" value="2" />
+        </label>
+      </div>
+    </div>
 
-      <!-- Module Specific Controls -->
-      <div class="grid2" id="riverMelodyControls" style="display:none;">
+    <div class="ctrl-heading">Sound</div>
+    <div class="grid2">
+      <div>
+        <label>Noise mix <span class="val mono" id="noiseVal"></span>
+          <input id="noiseMix" type="range" min="0" max="1" step="0.01" value="0.2" />
+        </label>
+      </div>
+      <div>
+        <label>Reverb <span class="val mono" id="reverbVal"></span>
+          <input id="reverbMix" type="range" min="0" max="1" step="0.01" value="0.45" />
+        </label>
+      </div>
+    </div>
+
+    <div class="ctrl-heading">Rhythm</div>
+    <div class="grid2">
+      <div>
+        <label>Tempo (BPM) <span class="val mono" id="bpmVal"></span>
+          <input id="bpm" type="range" min="40" max="160" step="1" value="72" />
+        </label>
+      </div>
+      <div>
+        <label>Beat grid
+          <select id="subdivSelect">
+            <option value="0">Off (free)</option>
+            <option value="4" selected>1/4 note</option>
+            <option value="8">1/8 note</option>
+            <option value="16">1/16 note</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <label>Perc mix <span class="val mono" id="percMixVal"></span>
+      <input id="percMix" type="range" min="0" max="1" step="0.01" value="0.55" />
+    </label>
+
+    <!-- Module Specific Controls -->
+    <div id="riverMelodyControls" style="display:none;">
+      <div class="ctrl-heading">RiverMelody</div>
+      <div class="grid2">
         <div>
-          <label>Prominence ρ <span class="val mono" id="prominenceVal"></span>
+          <label>Prominence &rho; <span class="val mono" id="prominenceVal"></span>
             <input id="prominence" type="range" min="1" max="3" step="0.05" value="1" />
           </label>
         </div>
@@ -279,14 +342,17 @@
           </label>
         </div>
       </div>
+    </div>
 
-      <div id="droneControls" style="display:none;">
-        <label>Drone mix <span class="val mono" id="droneMixVal"></span>
-          <input id="droneMix" type="range" min="0" max="1" step="0.01" value="0.3" />
-        </label>
-      </div>
+    <div id="droneControls" style="display:none;">
+      <label>Drone mix <span class="val mono" id="droneMixVal"></span>
+        <input id="droneMix" type="range" min="0" max="1" step="0.01" value="0.3" />
+      </label>
+    </div>
 
-      <div class="grid2" id="spectralChoirControls1" style="display:none;">
+    <div id="spectralChoirControls1" style="display:none;">
+      <div class="ctrl-heading">SpectralChoir</div>
+      <div class="grid2">
         <div>
           <label>Voices (N) <span class="val mono" id="voicesNVal"></span>
             <input id="voicesN" type="range" min="2" max="12" step="1" value="6" />
@@ -303,7 +369,7 @@
 
   <!-- VIEW 3: INFO -->
   <div id="view-info" class="view-panel">
-    <div class="card" style="margin-bottom: 20px;">
+    <div class="card panel-body" style="margin-bottom: 20px;">
       <h3>1. How it Works</h3>
       <p class="small">
         This app translates physical geography into sound. The core unit of data is the <b>Curvature Signal &kappa;(s)</b>: how sharply a river or coastline bends at every meter of its length. River geometry is fetched live from OpenStreetMap and cached locally.
@@ -312,19 +378,19 @@
         As an analysis window slides along the feature, we perform a <b>Spatial FFT</b> (Fast Fourier Transform). This breaks the river's shape into component spatial frequencies, each mapped to a different musical layer:
       </p>
       <ul class="small" style="padding-left:20px; line-height:1.6;">
-        <li><b>Low spatial frequency (large meanders):</b> Big, sweeping bends → Bass notes.</li>
-        <li><b>Mid spatial frequency (tighter loops):</b> Repeated curves → Melody notes.</li>
-        <li><b>High spatial frequency (jagged edges):</b> Rough texture → Percussion &amp; Water noise.</li>
+        <li><b>Low spatial frequency (large meanders):</b> Big, sweeping bends &rarr; Bass notes.</li>
+        <li><b>Mid spatial frequency (tighter loops):</b> Repeated curves &rarr; Melody notes.</li>
+        <li><b>High spatial frequency (jagged edges):</b> Rough texture &rarr; Percussion &amp; Water noise.</li>
       </ul>
       <p class="small">
         Synthesis uses pairs of <b>detuned sine oscillators</b> (8 cents apart) for a warm chorus effect. A <b>convolution reverb</b> with a low-pass-filtered impulse adds space. An internal <b>beat clock</b> can lock percussive hits to a rhythmic grid derived from curvature energy.
       </p>
     </div>
 
-    <div class="card" style="margin-bottom: 20px;">
+    <div class="card panel-body" style="margin-bottom: 20px;">
       <h3>2. Presets (Orchestration)</h3>
       <p class="small">Each preset listens to the river differently:</p>
-      <hr style="border:0; border-top:1px solid #2b3d55; margin: 10px 0;">
+      <hr style="border:0; border-top:1px solid var(--border); margin: 10px 0;">
 
       <h4>HybridPeak</h4>
       <p class="small"><b>Vibe:</b> Structured, musical, rhythmic.</p>
@@ -332,19 +398,19 @@
 
       <h4>RiverMelody</h4>
       <p class="small"><b>Vibe:</b> Meditative, solo instrument.</p>
-      <p class="small">Tracks only the single most dominant feature of the river at any moment. Plays it as a warm sine-chorus tone, grounded by a constant bass drone a octave below. Percussion intensity follows the melody's amplitude — loud bends hit harder.</p>
+      <p class="small">Tracks only the single most dominant feature of the river at any moment. Plays it as a warm sine-chorus tone, grounded by a constant bass drone an octave below. Percussion intensity follows the melody's amplitude — loud bends hit harder.</p>
 
       <h4>SpectralChoir</h4>
       <p class="small"><b>Vibe:</b> Ambient, lush, washing textures.</p>
       <p class="small">Maps the <i>entire curvature spectrum</i> to a bank of up to 12 voices, spread across the stereo field. Complex curves produce complex chords; straight sections let the choir fade to silence. Percussion uses the average voice loudness as its energy source.</p>
     </div>
 
-    <div class="card">
+    <div class="card panel-body">
       <h3>3. Parameters</h3>
       <ul class="small" style="padding-left:20px; line-height:1.6;">
         <li><b>Window Length (L):</b> The size of the analysis "eye" moving along the river.
-            <br><i>Large (10km+):</i> Hears giant meanders → slow, deep music.
-            <br><i>Small (1–2km):</i> Hears local wiggles → faster, more nervous music.</li>
+            <br><i>Large (10km+):</i> Hears giant meanders &rarr; slow, deep music.
+            <br><i>Small (1–2km):</i> Hears local wiggles &rarr; faster, more nervous music.</li>
         <li><b>Speed (v):</b> How fast the window travels down the river. Higher = faster playback.</li>
         <li><b>Scale / Root:</b> Musical key. All raw frequencies snap to these notes. Minor Pentatonic (default) is forgiving and almost always sounds good.</li>
         <li><b>Smoothing (&alpha;):</b> How quickly notes respond to changes. Low values (0.1–0.3) give smooth portamento glides; high values (near 1) make notes jump instantly.</li>
@@ -367,13 +433,12 @@
         <li><b>Persistence:</b> How long a voice lingers after its spectral peak disappears. High = ghostly sustain; low = instant reaction.</li>
       </ul>
 
-      <div style="margin-top:20px; text-align:center; display:flex; flex-direction:column; gap:10px;">
-        <button onclick="analyzeRiverHealth()" style="font-size:11px; padding:8px 10px; opacity:0.8;">Run DB Health Check (Console)</button>
-        <button onclick="riverDatabase.clear().then(()=>{alert('Database Cleared! Reloading...'); location.reload();})" style="font-size:11px; padding:8px 10px; opacity:0.8; background:#3d2b2b; border-color:#553a3a;">Clear Local Database</button>
+      <div class="footer-actions">
+        <button onclick="analyzeRiverHealth()">Run DB Health Check (Console)</button>
+        <button class="danger" onclick="riverDatabase.clear().then(()=>{alert('Database Cleared! Reloading...'); location.reload();})">Clear Local Database</button>
       </div>
     </div>
   </div>
-
 
 <script>
 function switchView(id, btn) {
@@ -1660,6 +1725,7 @@ function start() {
     
     // Optimistically set playing=true to make UI responsive
     playing = true;
+    els.playBtn.classList.add('playing');
     beatClock.beats = 0;
     analyzer.reset(p.L);
     setStatus("Initializing Audio...");
@@ -1711,12 +1777,14 @@ function start() {
     }).catch(e => {
         console.error(e);
         playing = false;
+        els.playBtn.classList.remove('playing');
         setStatus("Audio Error: " + e.message);
     });
 }
 
 function stop() {
     playing = false;
+    els.playBtn.classList.remove('playing');
     clearInterval(timer);
     cancelAnimationFrame(raf);
     cancelAnimationFrame(specRaf);
