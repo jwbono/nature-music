@@ -243,6 +243,29 @@
         </div>
       </div>
 
+      <div style="border-top: 1px solid #2b3d55; margin-top: 10px; padding-top: 10px;">
+        <div class="grid2">
+          <div>
+            <label>Tempo (BPM) <span class="val mono" id="bpmVal"></span>
+              <input id="bpm" type="range" min="40" max="160" step="1" value="72" />
+            </label>
+          </div>
+          <div>
+            <label>Beat grid
+              <select id="subdivSelect">
+                <option value="0">Off (free)</option>
+                <option value="4" selected>1/4 note</option>
+                <option value="8">1/8 note</option>
+                <option value="16">1/16 note</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <label>Perc mix <span class="val mono" id="percMixVal"></span>
+          <input id="percMix" type="range" min="0" max="1" step="0.01" value="0.55" />
+        </label>
+      </div>
+
       <!-- Module Specific Controls -->
       <div class="grid2" id="riverMelodyControls" style="display:none;">
         <div>
@@ -1281,7 +1304,8 @@ class SynthEngine {
         // Standard Components
         this._initHybrid();
         this._initChoir();
-        
+        this._initPercussion();
+
         this.started = true;
     }
 
@@ -1380,6 +1404,45 @@ class SynthEngine {
       }
   }
 
+  _initPercussion() {
+    const { ctx, nodes } = this;
+    const bufSize = ctx.sampleRate;
+    const nBuf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+    const d = nBuf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) d[i] = Math.random() * 2 - 1;
+    const percSrc = ctx.createBufferSource();
+    percSrc.buffer = nBuf;
+    percSrc.loop = true;
+    percSrc.start();
+
+    const percF = ctx.createBiquadFilter();
+    percF.type = 'bandpass';
+    percF.frequency.value = 2000;
+    percF.Q.value = 1.8;
+
+    const percG = ctx.createGain();
+    percG.gain.value = 0;
+
+    percSrc.connect(percF);
+    percF.connect(percG);
+    percG.connect(nodes.dry);
+    percG.connect(nodes.wet);
+
+    Object.assign(nodes, { percG, percF });
+  }
+
+  // energy 0–1: high = bassy thud, low = high-freq tick
+  firePerc(energy, p) {
+    if (!this.started || !p.percMix || energy < 0.05) return;
+    const { percG, percF } = this.nodes;
+    const t = this.ctx.currentTime;
+    percF.frequency.setValueAtTime(clamp(5000 - 4500 * energy, 300, 5000), t);
+    const amp = p.percMix * clamp(energy + 0.25, 0, 1) * 0.5;
+    percG.gain.cancelScheduledValues(t);
+    percG.gain.setValueAtTime(amp, t);
+    percG.gain.setTargetAtTime(0.0001, t, 0.025 + 0.07 * energy);
+  }
+
   setReverb(mix) {
     if(!this.started) return;
     this._acc(this.nodes.wet.gain, 0.05, 0.6 * mix);
@@ -1388,7 +1451,7 @@ class SynthEngine {
 
   freq(mid) { return 440 * Math.pow(2, (mid-69)/12); }
 
-  apply(c, p) {
+  apply(c, p, onGrid) {
     if(!this.started) return;
     const { bO, bG, mO1, mO2, mG, dO1, dO2, dG, nF, nG } = this.nodes;
     
@@ -1413,6 +1476,8 @@ class SynthEngine {
         this._acc(nG.gain, 0.05, p.noiseMix * 0.35 * c.water.noiseGain);
         this._acc(nF.frequency, 0.08, 1200 + 2200 * c.water.noiseGain);
 
+        if (onGrid) this.firePerc(c.water.noiseGain, p);
+
     } else if (c.preset === 'RiverMelody') {
         this._acc(bG.gain, S, 0);
         this._acc(nG.gain, S, 0);
@@ -1430,12 +1495,14 @@ class SynthEngine {
         this._acc(dO2.frequency, 0.2, df*1.5);
         this._acc(dG.gain, 0.15, (p.droneMix||0.3) * 0.25 * c.drone.gain);
 
+        if (onGrid) this.firePerc(c.melody.gain * 0.6, p);
+
     } else { // SpectralChoir
         this._acc(bG.gain, S, 0);
         this._acc(mG.gain, S, 0);
         this._acc(nG.gain, S, 0);
         this._acc(dG.gain, S, 0);
-        
+
         const N = Math.min(c.voices.length, 12);
         const voiceGain = 0.5 / Math.max(1, p.voicesN); // normalize total loudness
         for(let i=0; i<12; i++) {
@@ -1452,6 +1519,12 @@ class SynthEngine {
                 this._acc(this.choir[i].g.gain, 0.15, 0);
             }
         }
+
+        if (onGrid) {
+            const avgGain = c.voices.slice(0, Math.max(1, c.voiceCount))
+                .reduce((s, v) => s + v.gain, 0) / Math.max(1, c.voiceCount);
+            this.firePerc(avgGain, p);
+        }
     }
   }
 
@@ -1459,6 +1532,7 @@ class SynthEngine {
       if(!this.started) return;
       Object.values(this.nodes).forEach(n => { if(n instanceof AudioParam || n.gain) this._acc(n.gain || n, 0.05, 0); });
       this.choir.forEach(v => this._acc(v.g.gain, 0.05, 0));
+      if (this.nodes.percG) this._acc(this.nodes.percG.gain, 0.02, 0);
   }
 }
 
@@ -1468,7 +1542,8 @@ class SynthEngine {
 const els = {};
 ['riverSelect','presetSelect','L','v','alpha','sticky','scaleSelect','rootSelect',
  'noiseMix','reverbMix','prominence','maxHold','droneMix',
- 'voicesN','persistence','playBtn','stopBtn','recalcBtn',
+ 'voicesN','persistence','bpm','subdivSelect','percMix',
+ 'playBtn','stopBtn','recalcBtn',
  'status','canvas','spectralCanvas','progressBar'].forEach(id => els[id] = document.getElementById(id));
 
 // Helper for UI value labels
@@ -1486,6 +1561,7 @@ const STATE = { ds: 50, frameHz: 20 };
 const APP_VERSION = "1.0.2";
 let engine = new SynthEngine();
 let riverRes = null, curv = null, analyzer = null, timer = null, raf = null, specRaf = null, playing = false;
+const beatClock = { beats: 0 };
 
 function setStatus(s) { 
   els.status.innerHTML = `<span>${s}</span> <span style="float:right; opacity:0.3; font-size:10px;">v${APP_VERSION}</span>`;
@@ -1553,9 +1629,10 @@ function setAnalyzer() {
 function getParams() {
     const o = { dt: 1/STATE.frameHz };
     ['L','v','alpha','sticky','noiseMix','reverbMix','prominence','maxHold','droneMix',
-     'voicesN','persistence'].forEach(k => o[k] = +els[k].value);
+     'voicesN','persistence','bpm','percMix'].forEach(k => o[k] = +els[k].value);
     o.stickySemis = o.sticky;
     o.persistenceFrames = o.persistence;
+    o.subdivisions = +els.subdivSelect.value;
     o.droneOctave = -1;
     o.tiltLambda = 0.2;
     o.freqSmooth = 0.15;
@@ -1573,6 +1650,7 @@ function start() {
     
     // Optimistically set playing=true to make UI responsive
     playing = true;
+    beatClock.beats = 0;
     analyzer.reset(p.L);
     setStatus("Initializing Audio...");
 
@@ -1591,21 +1669,28 @@ function start() {
             engine.setReverb(pars.reverbMix); // Dynamic reverb update
             
             try {
+                // Advance beat clock and detect grid crossing
+                const prevBeats = beatClock.beats;
+                beatClock.beats += pars.dt * pars.bpm / 60;
+                const subdiv = pars.subdivisions > 0 ? 1 / pars.subdivisions : Infinity;
+                const onGrid = pars.subdivisions > 0 &&
+                    Math.floor(beatClock.beats / subdiv) > Math.floor(prevBeats / subdiv);
+
                 const res = analyzer.frame(pars);
-                
+
                 if (res.done) {
-                    stop(); 
-                    return; 
+                    stop();
+                    return;
                 }
-                
+
                 // Update Progress Bar
                 if (document.activeElement !== els.progressBar) {
                         const pct = (res.sC / riverRes.total) * 100;
                         els.progressBar.value = pct;
                         document.getElementById('progressVal').textContent = pct.toFixed(1) + '%';
                 }
-                
-                engine.apply(res, pars);
+
+                engine.apply(res, pars, onGrid);
                 raf = requestAnimationFrame(() => draw(res));
             } catch (e) {
                 console.error(e);
